@@ -163,11 +163,11 @@ Setup &amp; Installation</span></span></span></font></font></font></span></stron
 	them all with the following commands:</span></span></span></font></font></font></span></p>
 	<p style="font-variant: normal; letter-spacing: normal; font-style: normal; font-weight: normal; line-height: 100%; orphans: 2; widows: 2; margin-bottom: 0in; border: none; padding: 0in">
 	<font color="#000000"><font face="Inter, sans-serif"><font size="2" style="font-size: 10pt"><font face="Google Symbols"><font size="4" style="font-size: 13pt"></font></font></font></font></font></p></li>
-	<li><p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="4" style="font-size: 14pt"><b>
+	<p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="4" style="font-size: 14pt"><b><br/>
 	OBS USE PYTHON 3.10 THIS IS REQUIRED FOR FLASH-ATTN2 !!</b></font></p></li>
-	<li><p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="3" style="font-size: 12pt">You
-	can compile your own wheel but I use the wheel from this link</font></p></li>
-	<li><p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="3" style="font-size: 12pt"><a href="https://github.com/sunsetcoder/flash-attention-windows">https://github.com/sunsetcoder/flash-attention-windows</a></font></p></li>
+	<p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="3" style="font-size: 12pt">You
+	can compile your own wheel but I use the wheel from this link</font></p>
+	<p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="3" style="font-size: 12pt"><a href="https://github.com/sunsetcoder/flash-attention-windows">https://github.com/sunsetcoder/flash-attention-windows</a></font></p>
 </ul>
 <div id="cdk-accordion-child-24" dir="ltr">
 	<ul><li><p style="line-height: 100%; margin-bottom: 0in"><font face="Inter, sans-serif"><font size="2" style="font-size: 10pt">cd
