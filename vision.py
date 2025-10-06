@@ -148,7 +148,7 @@ def trigger_scan():
     if camera_stream is None: return jsonify({"error": "Camera stream not initialized"}), 500
     current_frame = camera_stream.get_current_frame()
     if current_frame:
-        description = ask_smol_vlm(current_frame, "Describe the scene concisely.")
+        description = ask_smol_vlm(current_frame, "Describe the main subject of the image in one short sentence.")
         return jsonify({"vision_context": description})
     else:
         return jsonify({"error": "Could not capture frame"}), 500
@@ -185,7 +185,7 @@ def user_input_loop():
                 print("\n>>> Analyzing New Frame <<<")
                 current_frame = camera_stream.get_current_frame()
                 if current_frame:
-                    new_description = ask_smol_vlm(current_frame, "Describe the scene concisely.")
+                    new_description = ask_smol_vlm(current_frame, "Describe the main subject of the image in one short sentence.")
                     context_for_this_request = new_description
                     last_vision_context = new_description
                     update_mcp_vision_memory(last_vision_context)
