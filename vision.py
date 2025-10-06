@@ -21,12 +21,12 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
 processor = None
 smol_vlm_model = None
-camera_stream = None # Replaces video_processor
+camera_stream = None
 vision_app = Flask("VisionService")
 # ------------------------------------------------------------------------------
 
 
-# --- [NEW] ROBUST CAMERA STREAMING CLASS ---
+# CAMERA STREAMING CLASS ---
 class CameraStream:
     """
     A dedicated thread to continuously read frames from the camera.
@@ -69,7 +69,7 @@ class CameraStream:
 # ------------------------------------------------------------------------------
 
 
-# --- 2. CORE FUNCTIONS (Mostly Unchanged) ---
+# --- 2. CORE FUNCTIONS ---
 def load_config():
     global config
     parser = configparser.ConfigParser()
@@ -122,7 +122,6 @@ def update_mcp_vision_memory(vision_description: str):
     except requests.exceptions.RequestException: pass
 # ------------------------------------------------------------------------------
 
-
 # --- 3. VISION SERVICE API ---
 @vision_app.route('/scan', methods=['GET'])
 def trigger_scan():
@@ -148,7 +147,7 @@ def user_input_loop():
     last_vision_context = ""
     time.sleep(1) 
     
-    print("\n--- Vision Client is Running (Robust Camera Logic) ---")
+    print("\n--- Vision Client is Running ---")
     print("Type 'quit' or press Ctrl+C to exit.\n")
 
     while True:
@@ -198,7 +197,7 @@ if __name__ == '__main__':
     load_config()
     initialize_models()
     try:
-        # Initialize our new robust camera stream
+        # Initialize camera stream
         camera_stream = CameraStream(camera_index=config['camera_index'])
     except IOError as e:
         sys.exit(f"VISION FATAL ERROR: {e}. Exiting.")

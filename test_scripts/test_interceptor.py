@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 
 # Use a port that we are absolutely sure is free.
 # We will use 9999 for this test.
-TEST_PORT = 8889
+TEST_PORT = 9999
 
 app = Flask(__name__)
 
