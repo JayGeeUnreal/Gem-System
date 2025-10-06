@@ -24,6 +24,10 @@ def load_config():
     config.read(config_file)
     settings = {}
     try:
+        # --- [NEW] Load the system prompt ---
+        settings['system_prompt'] = config.get('SystemPrompt', 'prompt', fallback='').strip()
+        # --- [END NEW] ---
+
         settings['llm_choice'] = config.get('MCP', 'llm_choice')
         settings['host'] = config.get('MCP', 'host')
         settings['port'] = config.getint('MCP', 'port')
@@ -82,17 +86,29 @@ elif config['llm_choice'] == "ollama":
 # --- 3. CORE HELPER FUNCTIONS ---
 # ------------------------------------------------------------------------------
 def ask_llm(prompt: str) -> str:
-    """Sends a prompt to the selected LLM and returns the response."""
+    """Sends a prompt to the selected LLM, prefixed with the system prompt."""
     print(f"MCP INFO: Sending prompt to {config['llm_choice'].upper()}...")
+    
+    # Retrieve the system prompt from our global config
+    system_prompt = config.get('system_prompt', '')
+
     if config['llm_choice'] == "gemini":
         try:
-            response = gemini_model.generate_content(prompt)
+            # Combine system and user prompts for Gemini
+            full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+            response = gemini_model.generate_content(full_prompt)
             return response.text.strip()
         except Exception as e: return f"Error from Gemini: {e}"
+
     elif config['llm_choice'] == "ollama":
         try:
             sanitized_model_name = config['ollama_model'].strip()
-            payload = {"model": sanitized_model_name, "messages": [{"role": "user", "content": prompt}], "stream": False}
+            # Create a message list with a system role for Ollama
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+            payload = {"model": sanitized_model_name, "messages": messages, "stream": False}
             response = requests.post(config['ollama_api_url'], json=payload)
             response.raise_for_status()
             response_json = response.json()
@@ -100,6 +116,7 @@ def ask_llm(prompt: str) -> str:
                 return response_json['message']['content'].strip()
             raise ValueError(f"Unexpected Ollama response: {response_json}")
         except Exception as e: return f"Error from Ollama: {e}"
+
     return "Error: LLM not configured."
 
 def sanitize_for_tts(text: str) -> str:
@@ -156,7 +173,7 @@ def get_fresh_vision_context() -> str:
 # --- 4. UNIVERSAL PROCESSING FUNCTION ---
 # ------------------------------------------------------------------------------
 def process_task(source: str, user_text: str, vision_context: str = "") -> str:
-    """This is the central logic hub for all incoming tasks."""
+    """This is the central logic hub for all incoming tasks. (Final Logic)"""
     global LATEST_VISION_CONTEXT
     
     # 1. Wake Word Gatekeeper
@@ -174,27 +191,29 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
 
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
 
-    # 2. On-Demand Vision Logic
-    final_vision_context = ""
+    # --- [FINAL CORRECTED BYPASS LOGIC] ---
+
+    # 2a. Direct Vision Passthrough (from vision.py client)
     if source == 'vision':
-        print("MCP: Using fresh context provided by vision client.")
-        final_vision_context = vision_context
+        print("MCP INFO: Direct passthrough from vision client. Bypassing LLM.")
         LATEST_VISION_CONTEXT = vision_context
-    else:
-        needs_new_vision = any(trigger in clean_user_text.lower() for trigger in config['vision_trigger_words'])
-        if needs_new_vision:
-            final_vision_context = get_fresh_vision_context()
-            LATEST_VISION_CONTEXT = final_vision_context
-        else:
-            print("MCP: Using cached vision context for non-vision request.")
-            final_vision_context = LATEST_VISION_CONTEXT
+        return vision_context
+
+    # 2b. On-Demand Vision Passthrough (from chat, audio, etc.)
+    is_vision_request = any(trigger in clean_user_text.lower() for trigger in config['vision_trigger_words'])
+    if is_vision_request:
+        print("MCP: Vision trigger detected from a non-vision source. Performing scan and bypassing LLM.")
+        description = get_fresh_vision_context()
+        LATEST_VISION_CONTEXT = description # Update memory
+        return description # Return the description directly as the final answer
     
-    # 3. Intent Recognition & Prompting
-    is_command = any(clean_user_text.lower().strip().startswith(verb) for verb in config['command_verbs'])
-    if is_command:
-        augmented_prompt = f"Command: {clean_user_text} with visual context: {final_vision_context}"
-    else:
-        augmented_prompt = f"Question: {clean_user_text} with visual context: {final_vision_context}"
+    # --- [END OF BYPASS LOGIC] ---
+
+    # 3. If we reach this point, it is a normal, non-visual question.
+    print("MCP: Processing as a standard text-only request.")
+    
+    # We no longer need visual context for these prompts.
+    augmented_prompt = f"Question: {clean_user_text}"
     
     # 4. Call LLM
     raw_llm_response = ask_llm(augmented_prompt)

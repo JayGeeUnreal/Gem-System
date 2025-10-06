@@ -21,12 +21,12 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
 processor = None
 smol_vlm_model = None
-camera_stream = None
+camera_stream = None # Replaces video_processor
 vision_app = Flask("VisionService")
 # ------------------------------------------------------------------------------
 
 
-# CAMERA STREAMING CLASS ---
+# --- CAMERA STREAMING CLASS ---
 class CameraStream:
     """
     A dedicated thread to continuously read frames from the camera.
@@ -69,7 +69,7 @@ class CameraStream:
 # ------------------------------------------------------------------------------
 
 
-# --- 2. CORE FUNCTIONS ---
+# --- 2. CORE FUNCTIONS (Mostly Unchanged) ---
 def load_config():
     global config
     parser = configparser.ConfigParser()
@@ -103,7 +103,25 @@ def ask_smol_vlm(image: Image.Image, prompt_text: str) -> str:
     try:
         output = smol_vlm_model.generate(**inputs, max_new_tokens=200, do_sample=False)
         generated_text = processor.batch_decode(output, skip_special_tokens=True)[0]
-        return generated_text.split("assistant\n")[-1].strip() if "assistant\n" in generated_text else generated_text.strip()
+
+        # --- [NEW & IMPROVED CLEANING LOGIC] ---
+        # The VLM is returning the full prompt context. We need to find the final
+        # "Assistant:" marker and take only the text that comes after it.
+        
+        # Define the marker that separates the prompt from the actual answer
+        separator = "Assistant:"
+        
+        if separator in generated_text:
+            # Split the string by the separator and take the last part
+            cleaned_text = generated_text.split(separator)[-1]
+        else:
+            # Fallback for other response formats
+            cleaned_text = generated_text
+
+        # Return the final, cleaned, and stripped text
+        return cleaned_text.strip()
+        # --- [END OF NEW LOGIC] ---
+
     except Exception as e: return f"Error: VLM inference failed. Details: {e}"
 
 def send_to_mcp(user_text: str, vision_description: str) -> str:
@@ -121,6 +139,7 @@ def update_mcp_vision_memory(vision_description: str):
         requests.post(url, json={"vision_context": vision_description}, timeout=2)
     except requests.exceptions.RequestException: pass
 # ------------------------------------------------------------------------------
+
 
 # --- 3. VISION SERVICE API ---
 @vision_app.route('/scan', methods=['GET'])
@@ -147,7 +166,7 @@ def user_input_loop():
     last_vision_context = ""
     time.sleep(1) 
     
-    print("\n--- Vision Client is Running ---")
+    print("\n--- Vision Client is Running (Robust Camera Logic) ---")
     print("Type 'quit' or press Ctrl+C to exit.\n")
 
     while True:
@@ -197,7 +216,7 @@ if __name__ == '__main__':
     load_config()
     initialize_models()
     try:
-        # Initialize camera stream
+        # Initialize our new robust camera stream
         camera_stream = CameraStream(camera_index=config['camera_index'])
     except IOError as e:
         sys.exit(f"VISION FATAL ERROR: {e}. Exiting.")
