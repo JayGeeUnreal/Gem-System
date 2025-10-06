@@ -160,10 +160,10 @@ Setup &amp; Installation</span></span></span></font></font></font></span></stron
 	<li><p style="line-height: 0.21in; orphans: 2; widows: 2; margin-bottom: 0.03in; border: none; padding: 0in">
 	<strong><span style="font-variant: normal"><font color="#000000"><font face="Inter, sans-serif"><font size="2" style="font-size: 10pt"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">Dependencies:</span></span></span></font></font></font></span></strong><span style="font-variant: normal"><font color="#000000"><font face="Inter, sans-serif"><font size="2" style="font-size: 10pt"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">&nbsp;You
 	must have the required Python libraries installed. You can install
-	them all with the following command:</span></span></span></font></font></font></span></p>
+	them all with the following commands:</span></span></span></font></font></font></span></p>
 	<p style="font-variant: normal; letter-spacing: normal; font-style: normal; font-weight: normal; line-height: 100%; orphans: 2; widows: 2; margin-bottom: 0in; border: none; padding: 0in">
-	<font color="#000000"><font face="Inter, sans-serif"><font size="2" style="font-size: 10pt"><font face="Google Symbols"><font size="4" style="font-size: 13pt">code</font></font>Bash</font></font></font></p></li>
-	<li><p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="4" style="font-size: 14pt"><b>!!
+	<font color="#000000"><font face="Inter, sans-serif"><font size="2" style="font-size: 10pt"><font face="Google Symbols"><font size="4" style="font-size: 13pt"></font></font></font></font></font></p></li>
+	<li><p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="4" style="font-size: 14pt"><b>
 	OBS USE PYTHON 3.10 THIS IS REQUIRED FOR FLASH-ATTN2 !!</b></font></p></li>
 	<li><p align="center" style="line-height: 100%; margin-bottom: 0in"><font size="3" style="font-size: 12pt">You
 	can compile your own wheel but I use the wheel from this link</font></p></li>
