@@ -2,12 +2,11 @@
 <html>
 <head>
 	<meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-	<title></title>
-	<meta name="generator" content="LibreOffice 24.2.4.2 (Windows)"/>
-	<meta name="created" content="2025-10-06T09:19:36.248000000"/>
-	<meta name="changed" content="2025-10-06T09:29:13.104000000"/>
+	
+	
 	
 </head>
+
 <body lang="en-US" link="#000080" vlink="#800000" dir="ltr"><h3 class="western">
 <strong><span style="font-variant: normal"><font color="#000000"><font face="Inter, sans-serif"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">Manual
 for:&nbsp;</span></span></span></font></font></span></strong><span style="display: inline-block; border-top: 1px solid #1f1f1f; border-bottom: 1px solid #1f1f1f; border-left: none; border-right: none; padding: 0.02in 0in"><strong><span style="font-variant: normal"><font color="#000000"><font face="DM Mono, monospace"><font size="2" style="font-size: 9pt"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">mcp.py</span></span></span></font></font></font></span></strong></span><strong><span style="font-variant: normal"><font color="#000000"><font face="Inter, sans-serif"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">&nbsp;(Master
