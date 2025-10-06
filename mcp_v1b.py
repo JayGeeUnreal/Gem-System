@@ -10,6 +10,7 @@ import sys
 import os
 import google.generativeai as genai
 import re
+from collections import deque
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -61,7 +62,7 @@ config = load_config()
 app = Flask(__name__)
 CORS(app)
 gemini_model = None
-LATEST_VISION_CONTEXT = "No visual context has been provided yet."
+VISION_HISTORY = deque(maxlen=5)
 
 if config['llm_choice'] == "gemini":
     print("MCP INFO: Initializing Gemini...")
@@ -85,17 +86,23 @@ elif config['llm_choice'] == "ollama":
 
 # --- 3. CORE HELPER FUNCTIONS ---
 # ------------------------------------------------------------------------------
-def ask_llm(prompt: str) -> str:
-    """Sends a prompt to the selected LLM, prefixed with the system prompt."""
+def ask_llm(user_prompt: str) -> str:
+    """Sends a prompt to the selected LLM, contextualized with the system prompt and vision history."""
     print(f"MCP INFO: Sending prompt to {config['llm_choice'].upper()}...")
     
-    # Retrieve the system prompt from our global config
     system_prompt = config.get('system_prompt', '')
+    
+    # --- [NEW] Build the vision history context block ---
+    history_context = ""
+    if VISION_HISTORY: # Only add history if it's not empty
+        history_items = "\n".join(f"- {item}" for item in VISION_HISTORY)
+        history_context = f"Here is a summary of the last few things you have seen, from most to least recent:\n{history_items}\n\n"
+    # --- [END NEW] ---
 
     if config['llm_choice'] == "gemini":
         try:
-            # Combine system and user prompts for Gemini
-            full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+            # Combine everything: system prompt, vision history, and the user's question
+            full_prompt = f"{system_prompt}\n\n{history_context}Based on that, answer the following:\nUser: {user_prompt}"
             response = gemini_model.generate_content(full_prompt)
             return response.text.strip()
         except Exception as e: return f"Error from Gemini: {e}"
@@ -103,10 +110,11 @@ def ask_llm(prompt: str) -> str:
     elif config['llm_choice'] == "ollama":
         try:
             sanitized_model_name = config['ollama_model'].strip()
-            # Create a message list with a system role for Ollama
+            # Combine history and user prompt for the user message
+            full_user_content = f"{history_context}Based on that, answer the following:\n{user_prompt}"
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": full_user_content}
             ]
             payload = {"model": sanitized_model_name, "messages": messages, "stream": False}
             response = requests.post(config['ollama_api_url'], json=payload)
@@ -118,7 +126,7 @@ def ask_llm(prompt: str) -> str:
         except Exception as e: return f"Error from Ollama: {e}"
 
     return "Error: LLM not configured."
-
+    
 def sanitize_for_tts(text: str) -> str:
     """Removes emojis and other non-standard characters for TTS engines."""
     if not text: return ""
@@ -173,10 +181,10 @@ def get_fresh_vision_context() -> str:
 # --- 4. UNIVERSAL PROCESSING FUNCTION ---
 # ------------------------------------------------------------------------------
 def process_task(source: str, user_text: str, vision_context: str = "") -> str:
-    """This is the central logic hub for all incoming tasks. (Final Logic)"""
-    global LATEST_VISION_CONTEXT
+    """This is the central logic hub for all incoming tasks. (Now with Memory)"""
+    global VISION_HISTORY
     
-    # 1. Wake Word Gatekeeper
+    # 1. Wake Word Gatekeeper (Unchanged)
     lower_user_text = user_text.lower().strip()
     wake_word_detected = False
     clean_user_text = user_text
@@ -191,35 +199,30 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
 
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
 
-    # --- [FINAL CORRECTED BYPASS LOGIC] ---
-
     # 2a. Direct Vision Passthrough (from vision.py client)
     if source == 'vision':
         print("MCP INFO: Direct passthrough from vision client. Bypassing LLM.")
-        LATEST_VISION_CONTEXT = vision_context
+        VISION_HISTORY.appendleft(vision_context) # Add to memory
         return vision_context
 
     # 2b. On-Demand Vision Passthrough (from chat, audio, etc.)
     is_vision_request = any(trigger in clean_user_text.lower() for trigger in config['vision_trigger_words'])
     if is_vision_request:
-        print("MCP: Vision trigger detected from a non-vision source. Performing scan and bypassing LLM.")
+        print("MCP: Vision trigger detected. Performing scan and bypassing LLM.")
         description = get_fresh_vision_context()
-        LATEST_VISION_CONTEXT = description # Update memory
-        return description # Return the description directly as the final answer
-    
-    # --- [END OF BYPASS LOGIC] ---
+        VISION_HISTORY.appendleft(description) # Add to memory
+        return description
 
     # 3. If we reach this point, it is a normal, non-visual question.
-    print("MCP: Processing as a standard text-only request.")
+    print("MCP: Processing as a standard text-only request with memory.")
     
-    # We no longer need visual context for these prompts.
-    augmented_prompt = f"Question: {clean_user_text}"
+    # The augmented_prompt is now created inside ask_llm
     
     # 4. Call LLM
-    raw_llm_response = ask_llm(augmented_prompt)
+    raw_llm_response = ask_llm(clean_user_text) # Just send the clean user text
     print(f"MCP: LLM Raw Response: '{raw_llm_response}'")
 
-    # 5. Clean and Truncate Response
+    # 5. Clean and Truncate Response (Unchanged)
     cleaned_llm_response = raw_llm_response.replace("RESPONSE:", "").strip()
     max_len = config.get('max_response_length', 0)
     if max_len > 0 and len(cleaned_llm_response) > max_len:
@@ -275,14 +278,15 @@ def handle_audio_request():
         send_to_social_stream(final_response)
     return jsonify({'response': final_response})
 
-@app.route('/update_vision', methods=['POST'])
+app.route('/update_vision', methods=['POST'])
 def update_vision_context():
-    global LATEST_VISION_CONTEXT
+    global VISION_HISTORY
     data = request.json
     new_context = data.get('vision_context')
     if new_context:
-        print(f"\nMCP MEMORY: Visual context has been UPDATED -> '{new_context[:70]}...'")
-        LATEST_VISION_CONTEXT = new_context
+        print(f"\nMCP MEMORY: Visual history has been UPDATED -> '{new_context[:70]}...'")
+        # Add the new description to the left (most recent) of our history list
+        VISION_HISTORY.appendleft(new_context)
     return jsonify({"status": "vision context updated"})
 # ------------------------------------------------------------------------------
 
