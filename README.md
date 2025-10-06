@@ -6,19 +6,7 @@
 	<meta name="generator" content="LibreOffice 24.2.4.2 (Windows)"/>
 	<meta name="created" content="2025-10-06T09:19:36.248000000"/>
 	<meta name="changed" content="2025-10-06T09:29:13.104000000"/>
-	<style type="text/css">
-		@page { size: 8.27in 11.69in; margin: 0.79in }
-		p { line-height: 115%; margin-bottom: 0.1in; background: transparent }
-		h3 { margin-top: 0.1in; margin-bottom: 0.08in; background: transparent; page-break-after: avoid }
-		h3.western { font-family: "Liberation Serif", serif; font-size: 14pt; font-weight: bold }
-		h3.cjk { font-family: "NSimSun"; font-size: 14pt; font-weight: bold }
-		h3.ctl { font-family: "Arial"; font-size: 14pt; font-weight: bold }
-		strong { font-weight: bold }
-		code.western { font-family: "Liberation Mono", monospace }
-		code.cjk { font-family: "NSimSun", monospace }
-		code.ctl { font-family: "Liberation Mono", monospace }
-		a:link { color: #000080; text-decoration: underline }
-	</style>
+	
 </head>
 <body lang="en-US" link="#000080" vlink="#800000" dir="ltr"><h3 class="western">
 <strong><span style="font-variant: normal"><font color="#000000"><font face="Inter, sans-serif"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">Manual
