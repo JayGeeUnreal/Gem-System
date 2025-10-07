@@ -7,6 +7,7 @@
 # - Vision passthrough for fast, accurate descriptions.
 # - OSC (Open Sound Control) command bypass for direct actions.
 # - Integration with TTS, Social Stream, and Vision services.
+# - State Maschine
 # ==============================================================================
 
 import requests
