@@ -6,7 +6,15 @@
 	
 	
 </head>
-
+#====================================================================
+# This script acts as the central brain for the AI system. It includes:
+# - Multi-LLM support (Gemini/Ollama) with system prompt integration.
+# - Vision memory to answer questions about past images/Videos.
+# - Vision passthrough for fast, accurate descriptions.
+# - OSC (Open Sound Control) command bypass for direct actions.
+# - Integration with TTS, Social Stream, Unreal Engine and Vision services.
+# - Hearing for the AI
+# ====================================================================
 <body lang="en-US" link="#000080" vlink="#800000" dir="ltr"><h3 class="western">
 <strong><span style="font-variant: normal"><font color="#000000"><font face="Inter, sans-serif"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">Manual
 for:&nbsp;</span></span></span></font></font></span></strong><span style="display: inline-block; border-top: 1px solid #1f1f1f; border-bottom: 1px solid #1f1f1f; border-left: none; border-right: none; padding: 0.02in 0in"><strong><span style="font-variant: normal"><font color="#000000"><font face="DM Mono, monospace"><font size="2" style="font-size: 9pt"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">mcp.py</span></span></span></font></font></font></span></strong></span><strong><span style="font-variant: normal"><font color="#000000"><font face="Inter, sans-serif"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">&nbsp;(Master
