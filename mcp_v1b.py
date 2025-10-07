@@ -1,14 +1,14 @@
-# ==============================================================================
-#                      Master Control Program (mcp.py)
-# ==============================================================================
+#====================================================================
+#                      Master Control Program (mcp_v1b.py)
+#====================================================================
 # This script acts as the central brain for the AI system. It includes:
 # - Multi-LLM support (Gemini/Ollama) with system prompt integration.
-# - Vision memory to answer questions about past images.
+# - Vision memory to answer questions about past images/Videos.
 # - Vision passthrough for fast, accurate descriptions.
 # - OSC (Open Sound Control) command bypass for direct actions.
-# - Integration with TTS, Social Stream, and Vision services.
-# - State Maschine
-# ==============================================================================
+# - Integration with TTS, Social Stream, Unreal Engine and Vision services.
+# - Hearing for the AI
+# ====================================================================
 
 import requests
 import json
