@@ -18,7 +18,7 @@ import os
 import google.generativeai as genai
 import re
 from collections import deque
-from pythonosc import udp_client
+from pythonosc import udp_client, osc_message_builder
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -125,9 +125,7 @@ def ask_llm(user_prompt: str) -> str:
         history_items = "\n".join(f"- {item}" for item in VISION_HISTORY)
         history_context = f"Here is a summary of the last few things you have seen, from most to least recent:\n{history_items}\n\n"
     
-    # --- [NEW] Add the current location to the context ---
     location_context = f"Your current location is: {CURRENT_LOCATION}.\n\n"
-    # --- [END NEW] ---
 
     if config['llm_choice'] == "gemini":
         try:
@@ -158,16 +156,34 @@ def ask_llm(user_prompt: str) -> str:
     return "Error: LLM not configured."
 
 def send_over_osc(command_text: str):
-    """Sends a command directly over OSC, bypassing the LLM."""
+    """Sends a command directly over OSC using a robust message builder."""
     if not config['osc_enabled'] or not osc_client:
         print("MCP WARNING: OSC is not enabled or client failed to initialize. Skipping send.")
         return
+
+    # --- [NEW ROBUST SENDING LOGIC] ---
+    # Instead of sending a simple list, we will build a proper OSC message.
+    # This avoids ambiguity with data types that can sometimes cause issues.
+    from pythonosc import osc_message_builder
+
     try:
-        message_to_send = [command_text, True]
-        osc_client.send_message(config['osc_address'], message_to_send)
-        print(f"MCP INFO: Sent OSC command to {config['osc_address']} -> '{command_text}'")
+        # 1. Create a message builder with the correct address.
+        builder = osc_message_builder.OscMessageBuilder(address=config['osc_address'])
+        
+        # 2. Add our arguments with their explicit types.
+        # 's' for string, 'T' for True.
+        builder.add_arg(command_text, builder.ARG_TYPE_STRING)
+        builder.add_arg(True, builder.ARG_TYPE_TRUE)
+        
+        # 3. Build the final message packet.
+        msg = builder.build()
+        
+        # 4. Send the message.
+        osc_client.send(msg)
+        
+        print(f"MCP INFO: Sent ROBUST OSC message to {config['osc_address']} -> '{command_text}'")
     except Exception as e:
-        print(f"MCP ERROR: Failed to send OSC message. Details: {e}")
+        print(f"MCP ERROR: Failed to send robust OSC message. Details: {e}")
 
 def sanitize_for_tts(text: str) -> str:
     """Removes emojis and other non-standard characters for TTS engines."""
