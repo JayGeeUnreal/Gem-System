@@ -6,23 +6,7 @@
 	
 	
 </head>
-#====================================================================
 
-# This script acts as the central brain for the AI system. It includes:
-
-# - Multi-LLM support (Gemini/Ollama) with system prompt integration.
-
-# - Vision memory to answer questions about past images/Videos.
-
-# - Vision passthrough for fast, accurate descriptions.
-
-# - OSC (Open Sound Control) command bypass for direct actions.
-
-# - Integration with TTS, Social Stream, Unreal Engine and Vision services.
-
-# - Hearing for the AI
-
-# ====================================================================
 
 <body lang="en-US" link="#000080" vlink="#800000" dir="ltr"><h3 class="western">
 <strong><span style="font-variant: normal"><font color="#000000"><font face="Inter, sans-serif"><span style="letter-spacing: normal"><span style="font-style: normal"><span style="font-weight: normal">Manual
