@@ -1,7 +1,14 @@
 # ==============================================================================
-#                           Master Control Program
+#                      Master Control Program (mcp.py)
+#                 - FULLY FEATURED AND UPGRADED VERSION -
 # ==============================================================================
-
+# This script acts as the central brain for the AI system. It includes:
+# - Multi-LLM support (Gemini/Ollama) with system prompt integration.
+# - Vision memory to answer questions about past images.
+# - Vision passthrough for fast, accurate descriptions.
+# - OSC (Open Sound Control) command bypass for direct actions.
+# - Integration with TTS, Social Stream, and Vision services.
+# ==============================================================================
 
 import requests
 import json
@@ -11,6 +18,7 @@ import os
 import google.generativeai as genai
 import re
 from collections import deque
+from pythonosc import udp_client
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -25,10 +33,7 @@ def load_config():
     config.read(config_file)
     settings = {}
     try:
-        # --- [NEW] Load the system prompt ---
         settings['system_prompt'] = config.get('SystemPrompt', 'prompt', fallback='').strip()
-        # --- [END NEW] ---
-
         settings['llm_choice'] = config.get('MCP', 'llm_choice')
         settings['host'] = config.get('MCP', 'host')
         settings['port'] = config.getint('MCP', 'port')
@@ -50,6 +55,15 @@ def load_config():
         settings['gemini_model'] = config.get('Gemini', 'model')
         settings['ollama_model'] = config.get('Ollama', 'model')
         settings['ollama_api_url'] = config.get('Ollama', 'api_url')
+
+        # Load OSC Settings
+        settings['osc_enabled'] = config.getboolean('OSC', 'enabled', fallback=False)
+        settings['osc_ip'] = config.get('OSC', 'ip')
+        settings['osc_port'] = config.getint('OSC', 'port')
+        settings['osc_address'] = config.get('OSC', 'address')
+        raw_osc_verbs = config.get('OSC', 'trigger_verbs', fallback='')
+        settings['osc_trigger_verbs'] = [verb.strip().lower() for verb in raw_osc_verbs.split(',') if verb.strip()]
+
     except Exception as e:
         sys.exit(f"FATAL ERROR: Missing a setting in '{config_file}'. Details: {e}")
     return settings
@@ -62,6 +76,8 @@ config = load_config()
 app = Flask(__name__)
 CORS(app)
 gemini_model = None
+
+# Initialize vision history to remember the last 5 descriptions
 VISION_HISTORY = deque(maxlen=5)
 
 if config['llm_choice'] == "gemini":
@@ -81,6 +97,15 @@ elif config['llm_choice'] == "ollama":
         print(f"MCP INFO: Ollama connection to '{config['ollama_model']}' successful.")
     except requests.exceptions.ConnectionError:
         sys.exit("MCP FATAL ERROR: Could not connect to Ollama. Is it running?")
+
+# --- 2.1 OSC CLIENT INITIALIZATION ---
+osc_client = None
+if config['osc_enabled']:
+    try:
+        osc_client = udp_client.SimpleUDPClient(config['osc_ip'], config['osc_port'])
+        print(f"MCP INFO: OSC client configured to send to {config['osc_ip']}:{config['osc_port']}")
+    except Exception as e:
+        print(f"MCP WARNING: Could not create OSC client. Details: {e}")
 # ------------------------------------------------------------------------------
 
 
@@ -92,16 +117,13 @@ def ask_llm(user_prompt: str) -> str:
     
     system_prompt = config.get('system_prompt', '')
     
-    # --- [NEW] Build the vision history context block ---
     history_context = ""
-    if VISION_HISTORY: # Only add history if it's not empty
+    if VISION_HISTORY:
         history_items = "\n".join(f"- {item}" for item in VISION_HISTORY)
         history_context = f"Here is a summary of the last few things you have seen, from most to least recent:\n{history_items}\n\n"
-    # --- [END NEW] ---
 
     if config['llm_choice'] == "gemini":
         try:
-            # Combine everything: system prompt, vision history, and the user's question
             full_prompt = f"{system_prompt}\n\n{history_context}Based on that, answer the following:\nUser: {user_prompt}"
             response = gemini_model.generate_content(full_prompt)
             return response.text.strip()
@@ -110,7 +132,6 @@ def ask_llm(user_prompt: str) -> str:
     elif config['llm_choice'] == "ollama":
         try:
             sanitized_model_name = config['ollama_model'].strip()
-            # Combine history and user prompt for the user message
             full_user_content = f"{history_context}Based on that, answer the following:\n{user_prompt}"
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -126,7 +147,19 @@ def ask_llm(user_prompt: str) -> str:
         except Exception as e: return f"Error from Ollama: {e}"
 
     return "Error: LLM not configured."
-    
+
+def send_over_osc(command_text: str):
+    """Sends a command directly over OSC, bypassing the LLM."""
+    if not config['osc_enabled'] or not osc_client:
+        print("MCP WARNING: OSC is not enabled or client failed to initialize. Skipping send.")
+        return
+    try:
+        message_to_send = [command_text, True]
+        osc_client.send_message(config['osc_address'], message_to_send)
+        print(f"MCP INFO: Sent OSC command to {config['osc_address']} -> '{command_text}'")
+    except Exception as e:
+        print(f"MCP ERROR: Failed to send OSC message. Details: {e}")
+
 def sanitize_for_tts(text: str) -> str:
     """Removes emojis and other non-standard characters for TTS engines."""
     if not text: return ""
@@ -181,10 +214,10 @@ def get_fresh_vision_context() -> str:
 # --- 4. UNIVERSAL PROCESSING FUNCTION ---
 # ------------------------------------------------------------------------------
 def process_task(source: str, user_text: str, vision_context: str = "") -> str:
-    """This is the central logic hub for all incoming tasks. (Now with Memory)"""
+    """This is the central logic hub for all incoming tasks."""
     global VISION_HISTORY
     
-    # 1. Wake Word Gatekeeper (Unchanged)
+    # 1. Wake Word Gatekeeper
     lower_user_text = user_text.lower().strip()
     wake_word_detected = False
     clean_user_text = user_text
@@ -199,30 +232,34 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
 
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
 
-    # 2a. Direct Vision Passthrough (from vision.py client)
+    # 2. OSC Command Bypass
+    if config['osc_enabled']:
+        for verb in config['osc_trigger_verbs']:
+            if clean_user_text.lower().startswith(verb):
+                print("MCP INFO: OSC trigger verb detected. Bypassing LLM.")
+                send_over_osc(clean_user_text)
+                return "Okay, doing that now."
+
+    # 3a. Direct Vision Passthrough
     if source == 'vision':
         print("MCP INFO: Direct passthrough from vision client. Bypassing LLM.")
-        VISION_HISTORY.appendleft(vision_context) # Add to memory
+        VISION_HISTORY.appendleft(vision_context)
         return vision_context
 
-    # 2b. On-Demand Vision Passthrough (from chat, audio, etc.)
+    # 3b. On-Demand Vision Passthrough
     is_vision_request = any(trigger in clean_user_text.lower() for trigger in config['vision_trigger_words'])
     if is_vision_request:
         print("MCP: Vision trigger detected. Performing scan and bypassing LLM.")
         description = get_fresh_vision_context()
-        VISION_HISTORY.appendleft(description) # Add to memory
+        VISION_HISTORY.appendleft(description)
         return description
-
-    # 3. If we reach this point, it is a normal, non-visual question.
+    
+    # 4. If we reach here, it is a normal, non-visual question for the LLM.
     print("MCP: Processing as a standard text-only request with memory.")
-    
-    # The augmented_prompt is now created inside ask_llm
-    
-    # 4. Call LLM
-    raw_llm_response = ask_llm(clean_user_text) # Just send the clean user text
+    raw_llm_response = ask_llm(clean_user_text)
     print(f"MCP: LLM Raw Response: '{raw_llm_response}'")
 
-    # 5. Clean and Truncate Response (Unchanged)
+    # 5. Clean and Truncate Response
     cleaned_llm_response = raw_llm_response.replace("RESPONSE:", "").strip()
     max_len = config.get('max_response_length', 0)
     if max_len > 0 and len(cleaned_llm_response) > max_len:
@@ -278,14 +315,13 @@ def handle_audio_request():
         send_to_social_stream(final_response)
     return jsonify({'response': final_response})
 
-app.route('/update_vision', methods=['POST'])
+@app.route('/update_vision', methods=['POST'])
 def update_vision_context():
     global VISION_HISTORY
     data = request.json
     new_context = data.get('vision_context')
     if new_context:
         print(f"\nMCP MEMORY: Visual history has been UPDATED -> '{new_context[:70]}...'")
-        # Add the new description to the left (most recent) of our history list
         VISION_HISTORY.appendleft(new_context)
     return jsonify({"status": "vision context updated"})
 # ------------------------------------------------------------------------------
@@ -297,6 +333,10 @@ if __name__ == '__main__':
     print("\n==============================================================================")
     print(f"--- Starting UNIFIED Master Control Program (MCP) ---")
     print(f"--- Using LLM: {config['llm_choice'].upper()} ---")
+    if config['osc_enabled']:
+        print(f"--- OSC sending is ENABLED to {config['osc_ip']}:{config['osc_port']} ---")
+    else:
+        print(f"--- OSC sending is DISABLED ---")
     print(f"--- API Server listening on http://{config['host']}:{config['port']} ---")
     print("==============================================================================\n")
     app.run(host=config['host'], port=config['port'], debug=True)
