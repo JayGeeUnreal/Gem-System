@@ -1,6 +1,5 @@
 # ==============================================================================
 #                      Master Control Program (mcp.py)
-#                 - FULLY FEATURED AND UPGRADED VERSION -
 # ==============================================================================
 # This script acts as the central brain for the AI system. It includes:
 # - Multi-LLM support (Gemini/Ollama) with system prompt integration.
@@ -80,6 +79,8 @@ gemini_model = None
 # Initialize vision history to remember the last 5 descriptions
 VISION_HISTORY = deque(maxlen=5)
 
+CURRENT_LOCATION = "the stream room" # The default starting location
+
 if config['llm_choice'] == "gemini":
     print("MCP INFO: Initializing Gemini...")
     try:
@@ -112,19 +113,25 @@ if config['osc_enabled']:
 # --- 3. CORE HELPER FUNCTIONS ---
 # ------------------------------------------------------------------------------
 def ask_llm(user_prompt: str) -> str:
-    """Sends a prompt to the selected LLM, contextualized with the system prompt and vision history."""
+    """Sends a prompt to the selected LLM, contextualized with location, history, and system prompt."""
     print(f"MCP INFO: Sending prompt to {config['llm_choice'].upper()}...")
     
     system_prompt = config.get('system_prompt', '')
     
+    # Build the vision history context block
     history_context = ""
     if VISION_HISTORY:
         history_items = "\n".join(f"- {item}" for item in VISION_HISTORY)
         history_context = f"Here is a summary of the last few things you have seen, from most to least recent:\n{history_items}\n\n"
+    
+    # --- [NEW] Add the current location to the context ---
+    location_context = f"Your current location is: {CURRENT_LOCATION}.\n\n"
+    # --- [END NEW] ---
 
     if config['llm_choice'] == "gemini":
         try:
-            full_prompt = f"{system_prompt}\n\n{history_context}Based on that, answer the following:\nUser: {user_prompt}"
+            # Combine everything: system prompt, location, vision history, and the user's question
+            full_prompt = f"{system_prompt}\n\n{location_context}{history_context}Based on that, answer the following:\nUser: {user_prompt}"
             response = gemini_model.generate_content(full_prompt)
             return response.text.strip()
         except Exception as e: return f"Error from Gemini: {e}"
@@ -132,7 +139,8 @@ def ask_llm(user_prompt: str) -> str:
     elif config['llm_choice'] == "ollama":
         try:
             sanitized_model_name = config['ollama_model'].strip()
-            full_user_content = f"{history_context}Based on that, answer the following:\n{user_prompt}"
+            # Combine context and user prompt for the user message
+            full_user_content = f"{location_context}{history_context}Based on that, answer the following:\n{user_prompt}"
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": full_user_content}
@@ -215,7 +223,7 @@ def get_fresh_vision_context() -> str:
 # ------------------------------------------------------------------------------
 def process_task(source: str, user_text: str, vision_context: str = "") -> str:
     """This is the central logic hub for all incoming tasks."""
-    global VISION_HISTORY
+    global VISION_HISTORY, CURRENT_LOCATION # Make sure to include CURRENT_LOCATION
     
     # 1. Wake Word Gatekeeper
     lower_user_text = user_text.lower().strip()
@@ -232,13 +240,30 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
 
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
 
-    # 2. OSC Command Bypass
+    # --- 2. Location-Aware OSC Command Bypass ---
     if config['osc_enabled']:
         for verb in config['osc_trigger_verbs']:
+            # Check if the command starts with one of our movement verbs
             if clean_user_text.lower().startswith(verb):
-                print("MCP INFO: OSC trigger verb detected. Bypassing LLM.")
-                send_over_osc(clean_user_text)
-                return "Okay, doing that now."
+                # The destination is the part of the command after the verb
+                destination = clean_user_text[len(verb):].strip()
+                
+                if not destination:
+                    return "Where do you want me to go?"
+
+                print(f"MCP INFO: OSC movement command detected. Destination: '{destination}'")
+
+                # Check if we are already at the destination
+                if destination.lower() == CURRENT_LOCATION.lower():
+                    print(f"MCP INFO: Already at '{destination}'. No OSC command sent.")
+                    return f"I'm already at {destination}."
+                else:
+                    # If we are not there, send the command and update our state
+                    print(f"MCP INFO: Moving to '{destination}'. Sending OSC command.")
+                    send_over_osc(clean_user_text)
+                    CURRENT_LOCATION = destination # Update our current location
+                    return f"Okay, I'm heading to {destination} now."
+    # ------
 
     # 3a. Direct Vision Passthrough
     if source == 'vision':
@@ -254,7 +279,7 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
         VISION_HISTORY.appendleft(description)
         return description
     
-    # 4. If we reach here, it is a normal, non-visual question for the LLM.
+    # 4. Standard LLM request with memory
     print("MCP: Processing as a standard text-only request with memory.")
     raw_llm_response = ask_llm(clean_user_text)
     print(f"MCP: LLM Raw Response: '{raw_llm_response}'")
@@ -263,6 +288,7 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
     cleaned_llm_response = raw_llm_response.replace("RESPONSE:", "").strip()
     max_len = config.get('max_response_length', 0)
     if max_len > 0 and len(cleaned_llm_response) > max_len:
+        # ... (truncation logic remains the same)
         truncated_response = cleaned_llm_response[:max_len]
         last_space = truncated_response.rfind(' ')
         if last_space != -1:
