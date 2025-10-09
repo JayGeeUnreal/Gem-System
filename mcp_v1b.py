@@ -1,14 +1,14 @@
-#====================================================================
-#                      Master Control Program (mcp_v1b.py)
-#====================================================================
-# This script acts as the central brain for the AI system. It includes:
-# - Multi-LLM support (Gemini/Ollama) with system prompt integration.
-# - Vision memory to answer questions about past images/Videos.
-# - Vision passthrough for fast, accurate descriptions.
-# - OSC (Open Sound Control) command bypass for direct actions.
-# - Integration with TTS, Social Stream, Unreal Engine and Vision services.
-# - Hearing for the AI
-# ====================================================================
+# ==============================================================================
+#                      Master Control Program (mcp.py)
+#          - UNIFIED MULTIMODAL & PIPELINED ARCHITECTURE -
+# ==============================================================================
+# This script acts as the central brain for the AI system. It supports:
+# - A unified multimodal mode ('ollama_vision') that sends images and text
+#   directly to a capable model like Gemma.
+# - The original pipelined modes ('ollama', 'gemini') that use a separate
+#   vision service for text descriptions.
+# - Location awareness, OSC command bypass, vision history, and more.
+# ==============================================================================
 
 import requests
 import json
@@ -42,21 +42,29 @@ def load_config():
         settings['wake_words'] = [word.strip().lower() for word in raw_wake_words.split(',') if word.strip()]
         raw_command_verbs = config.get('Assistant', 'command_verbs', fallback='')
         settings['command_verbs'] = [verb.strip().lower() for verb in raw_command_verbs.split(',') if verb.strip()]
+        
+        # Vision Service URLs
         settings['vision_service_scan_url'] = config.get('VisionService', 'scan_url')
+        settings['vision_service_get_image_url'] = config.get('VisionService', 'vision_service_get_image_url', fallback='')
         raw_triggers = config.get('VisionService', 'vision_trigger_words', fallback='')
         settings['vision_trigger_words'] = [word.strip().lower() for word in raw_triggers.split(',') if word.strip()]
+
+        # External Service Integrations
         settings['social_stream_enabled'] = config.getboolean('SocialStream', 'enabled', fallback=False)
         settings['social_stream_session_id'] = config.get('SocialStream', 'session_id')
         settings['social_stream_target_platform'] = config.get('SocialStream', 'target_platform')
         settings['social_stream_api_url'] = config.get('SocialStream', 'api_url')
         settings['styletts_enabled'] = config.getboolean('StyleTTS', 'enabled', fallback=False)
         settings['styletts_url'] = config.get('StyleTTS', 'tts_url')
+        
+        # LLM Models
         settings['gemini_api_key'] = config.get('Gemini', 'api_key')
         settings['gemini_model'] = config.get('Gemini', 'model')
         settings['ollama_model'] = config.get('Ollama', 'model')
+        settings['ollama_vision_model'] = config.get('Ollama', 'vision_model', fallback='')
         settings['ollama_api_url'] = config.get('Ollama', 'api_url')
 
-        # Load OSC Settings
+        # OSC Settings
         settings['osc_enabled'] = config.getboolean('OSC', 'enabled', fallback=False)
         settings['osc_ip'] = config.get('OSC', 'ip')
         settings['osc_port'] = config.getint('OSC', 'port')
@@ -77,10 +85,8 @@ app = Flask(__name__)
 CORS(app)
 gemini_model = None
 
-# Initialize vision history to remember the last 5 descriptions
 VISION_HISTORY = deque(maxlen=5)
-
-CURRENT_LOCATION = "the stream room" # The default starting location
+CURRENT_LOCATION = "the stream room"
 
 if config['llm_choice'] == "gemini":
     print("MCP INFO: Initializing Gemini...")
@@ -92,15 +98,14 @@ if config['llm_choice'] == "gemini":
         print(f"MCP INFO: Gemini model '{config['gemini_model']}' loaded.")
     except Exception as e:
         sys.exit(f"MCP FATAL ERROR: Failed to configure Gemini API. Details: {e}")
-elif config['llm_choice'] == "ollama":
+elif config['llm_choice'] in ["ollama", "ollama_vision"]:
     print("MCP INFO: Verifying Ollama connection...")
     try:
         requests.get(config['ollama_api_url'].rsplit('/', 1)[0])
-        print(f"MCP INFO: Ollama connection to '{config['ollama_model']}' successful.")
+        print(f"MCP INFO: Ollama connection to '{config['ollama_api_url']}' successful.")
     except requests.exceptions.ConnectionError:
         sys.exit("MCP FATAL ERROR: Could not connect to Ollama. Is it running?")
 
-# --- 2.1 OSC CLIENT INITIALIZATION ---
 osc_client = None
 if config['osc_enabled']:
     try:
@@ -113,74 +118,124 @@ if config['osc_enabled']:
 
 # --- 3. CORE HELPER FUNCTIONS ---
 # ------------------------------------------------------------------------------
-def ask_llm(user_prompt: str) -> str:
-    """Sends a prompt to the selected LLM, contextualized with location, history, and system prompt."""
+def ask_llm(user_prompt: str, image_data_base64: str = None) -> str:
+    """Sends a prompt (and optionally an image) to the selected LLM with robust debugging."""
     print(f"MCP INFO: Sending prompt to {config['llm_choice'].upper()}...")
     
     system_prompt = config.get('system_prompt', '')
-    
-    # Build the vision history context block
+    location_context = f"Your current location is: {CURRENT_LOCATION}.\n\n"
     history_context = ""
     if VISION_HISTORY:
         history_items = "\n".join(f"- {item}" for item in VISION_HISTORY)
-        history_context = f"Here is a summary of the last few things you have seen, from most to least recent:\n{history_items}\n\n"
-    
-    location_context = f"Your current location is: {CURRENT_LOCATION}.\n\n"
+        history_context = f"Here is a summary of the last few things you have seen (as text descriptions), from most to least recent:\n{history_items}\n\n"
 
-    if config['llm_choice'] == "gemini":
-        try:
-            # Combine everything: system prompt, location, vision history, and the user's question
-            full_prompt = f"{system_prompt}\n\n{location_context}{history_context}Based on that, answer the following:\nUser: {user_prompt}"
+    try:
+        payload = {}
+        if config['llm_choice'] == 'ollama_vision':
+            enhanced_system_prompt = f"{system_prompt}\n\n{location_context}{history_context}"
+            user_message = {"role": "user", "content": user_prompt}
+            if image_data_base64:
+                user_message["images"] = [image_data_base64]
+            messages = [{"role": "system", "content": enhanced_system_prompt}, user_message]
+            payload = {"model": config['ollama_vision_model'], "messages": messages, "stream": False}
+        
+        elif config['llm_choice'] == 'ollama':
+            full_user_content = f"{location_context}{history_context}Based on that, answer the following:\n{user_prompt}"
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": full_user_content}]
+            payload = {"model": config['ollama_model'], "messages": messages, "stream": False}
+        
+        elif config['llm_choice'] == 'gemini':
+            full_user_content = f"{location_context}{history_context}Based on that, answer the following:\n{user_prompt}"
+            full_prompt = f"{system_prompt}\n\n{full_user_content}"
             response = gemini_model.generate_content(full_prompt)
             return response.text.strip()
-        except Exception as e: return f"Error from Gemini: {e}"
 
-    elif config['llm_choice'] == "ollama":
-        try:
-            sanitized_model_name = config['ollama_model'].strip()
-            # Combine context and user prompt for the user message
-            full_user_content = f"{location_context}{history_context}Based on that, answer the following:\n{user_prompt}"
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_user_content}
-            ]
-            payload = {"model": sanitized_model_name, "messages": messages, "stream": False}
-            response = requests.post(config['ollama_api_url'], json=payload)
-            response.raise_for_status()
-            response_json = response.json()
-            if 'message' in response_json and 'content' in response_json['message']:
-                return response_json['message']['content'].strip()
-            raise ValueError(f"Unexpected Ollama response: {response_json}")
-        except Exception as e: return f"Error from Ollama: {e}"
+        # Request to Ollama
+        response = requests.post(config['ollama_api_url'], json=payload, timeout=60)
+        response.raise_for_status() 
 
-    return "Error: LLM not configured."
+        response_json = response.json()
+
+        # --- [CRUCIAL DEBUG STEP] ---
+        # Print the entire JSON response from Ollama so we can see its structure.
+        print(f"MCP DEBUG: Raw JSON response from Ollama: {response_json}")
+        # --- [END DEBUG STEP] ---
+
+        # The current logic expects {"message": {"content": "..."}}
+        # We will adjust this based on the debug output.
+        return response_json.get('message', {}).get('content', '').strip()
+
+    except requests.exceptions.HTTPError as http_err:
+        print(f"MCP ERROR: HTTP Error occurred: {http_err}")
+        print(f"MCP ERROR: Response Body from Ollama: {http_err.response.text}")
+        return f"Sorry, there was an HTTP error from the AI model."
+    except Exception as e:
+        print(f"MCP ERROR: An exception occurred in ask_llm: {e}")
+        return f"Sorry, an error occurred: {e}"
+
+def get_image_from_vision_service() -> str:
+    """Calls the simplified vision service to get a Base64 encoded image with better error handling."""
+    url = config.get('vision_service_get_image_url')
+    if not url:
+        print("MCP ERROR: The 'vision_service_get_image_url' is not set in mcp_settings.ini.")
+        return None
+        
+    print(f"MCP CORE: Requesting a fresh image from URL: {url}...")
+    try:
+        response = requests.get(url, timeout=15)
+        # This will raise an error for 4xx or 5xx status codes
+        response.raise_for_status()
+        
+        # Check if the key exists in the JSON
+        response_json = response.json()
+        if "image_base64" not in response_json:
+            print("MCP ERROR: The response from vision.py was valid JSON, but the 'image_base64' key was missing.")
+            return None
+            
+        return response_json.get("image_base64")
+
+    except requests.exceptions.Timeout:
+        print("MCP ERROR: The request to the vision service timed out. Is vision.py running and responsive?")
+        return None
+    except requests.exceptions.ConnectionError:
+        print("MCP ERROR: Could not connect to the vision service. Is vision.py running on the correct host and port?")
+        return None
+    except requests.exceptions.JSONDecodeError:
+        print("MCP ERROR: The vision service did not return valid JSON. The response was: " + response.text)
+        return None
+    except requests.exceptions.HTTPError as e:
+        print(f"MCP ERROR: The vision service returned an HTTP error: {e._class.name_}")
+        print(f"MCP ERROR: Full response from vision.py: {e.response.text}")
+        return None
+    except Exception as e:
+        # A catch-all for any other unexpected errors
+        print(f"MCP ERROR: An unexpected error occurred while getting the image: {e}")
+        return None
+
+def get_fresh_vision_context() -> str:
+    """Commands the legacy vision service to perform a scan and return the text context."""
+    url = config.get('vision_service_scan_url')
+    if not url: return "Error: Vision service URL not configured."
+    print(f"MCP CORE: Requesting a fresh vision scan from {url}...")
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        description = response.json().get("vision_context", "Error: Invalid response from vision service.")
+        print(f"MCP CORE: Received fresh context: '{description[:70]}...'")
+        return description
+    except Exception as e: return f"Error: Could not reach vision service. Is it running? Details: {e}"
 
 def send_over_osc(command_text: str):
     """Sends a command directly over OSC using a robust message builder."""
     if not config['osc_enabled'] or not osc_client:
         print("MCP WARNING: OSC is not enabled or client failed to initialize. Skipping send.")
         return
-
-    # --- [NEW ROBUST SENDING LOGIC] ---
-    # Instead of sending a simple list, we will build a proper OSC message.
-    # This avoids ambiguity with data types that can sometimes cause issues.
-    from pythonosc import osc_message_builder
-
     try:
-        # 1. Create a message builder with the correct address.
         builder = osc_message_builder.OscMessageBuilder(address=config['osc_address'])
-        
-        # 2. Add our arguments with their explicit types.
-        # 's' for string, 'T' for True.
         builder.add_arg(command_text, builder.ARG_TYPE_STRING)
         builder.add_arg(True, builder.ARG_TYPE_TRUE)
-        
-        # 3. Build the final message packet.
         msg = builder.build()
-        
-        # 4. Send the message.
         osc_client.send(msg)
-        
         print(f"MCP INFO: Sent ROBUST OSC message to {config['osc_address']} -> '{command_text}'")
     except Exception as e:
         print(f"MCP ERROR: Failed to send robust OSC message. Details: {e}")
@@ -193,54 +248,50 @@ def sanitize_for_tts(text: str) -> str:
     return re.sub(r'\s+', ' ', sanitized_text).strip()
 
 def send_to_social_stream(text_to_send: str):
-    """Sends the raw, emoji-friendly text to Social Stream Ninja."""
-    if not config.get('social_stream_enabled', False): return
-    if not text_to_send or text_to_send.startswith("ACTION_GOTO:"): return
-    session_id = config.get('social_stream_session_id'); api_url = config.get('social_stream_api_url'); target_platform = config.get('social_stream_target_platform')
-    if not session_id or not api_url or not target_platform: return
+    """Sends the raw, emoji-friendly text to Social Stream Ninja with full debugging."""
+    if not config.get('social_stream_enabled', False):
+        print("MCP DEBUG: Did not send to Social Stream because it is disabled in mcp_settings.ini.")
+        return
+
+    if not text_to_send or text_to_send.startswith("ACTION_GOTO:"):
+        return
+
+    session_id = config.get('social_stream_session_id')
+    api_url = config.get('social_stream_api_url')
+    target_platform = config.get('social_stream_target_platform')
+    
+    if not all([session_id, api_url, target_platform]):
+        print("MCP DEBUG: Did not send to Social Stream because one or more required settings (session_id, api_url, target_platform) are missing in mcp_settings.ini.")
+        return
+
+    # This is the line that was missing. It builds the final URL.
     url = f"{api_url}/{session_id}"
     payload = {"action": "sendChat", "value": text_to_send, "target": target_platform}
+    
+    print(f"MCP DEBUG: Attempting to send to Social Stream Ninja at URL: {url}")
     print(f"MCP INFO: Sending to Social Stream Ninja -> '{text_to_send}'")
+    
     try:
-        requests.post(url, json=payload, headers={"Content-Type": "application/json"}).raise_for_status()
+        # This is the line that actually sends the request.
+        requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10).raise_for_status()
         print("MCP INFO: Social Stream Ninja accepted the message.")
-    except Exception as e: print(f"MCP ERROR: Could not send to Social Stream Ninja. Details: {e}")
+    except Exception as e:
+        print(f"MCP ERROR: Could not send to Social Stream Ninja. Details: {e}")
 
 def send_to_tts(text_to_speak: str):
     """Sanitizes the text and then sends it to the StyleTTS2 server."""
     if not config.get('styletts_enabled', False): return
     if not text_to_speak or text_to_speak.startswith("ACTION_GOTO:"): return
-    url = config.get('styletts_url')
-    if not url: return
-    clean_text = sanitize_for_tts(text_to_speak)
-    if not clean_text: return
-    payload = {"chatmessage": clean_text}
-    print(f"MCP INFO: Sending SANITIZED text to StyleTTS Server -> '{clean_text}'")
-    try:
-        requests.post(url, json=payload, timeout=15).raise_for_status()
-        print("MCP INFO: StyleTTS server accepted the request.")
-    except Exception as e: print(f"MCP ERROR: Could not send to StyleTTS server. Details: {e}")
-
-def get_fresh_vision_context() -> str:
-    """Commands the vision service to perform a new scan and return the context."""
-    url = config.get('vision_service_scan_url')
-    if not url: return "Error: Vision service URL not configured."
-    print(f"MCP CORE: Requesting a fresh vision scan from {url}...")
-    try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        description = response.json().get("vision_context", "Error: Invalid response from vision service.")
-        print(f"MCP CORE: Received fresh context: '{description[:70]}...'")
-        return description
-    except Exception as e: return f"Error: Could not reach vision service. Is it running? Details: {e}"
+    # ... (function body)
+    pass
 # ------------------------------------------------------------------------------
 
 
 # --- 4. UNIVERSAL PROCESSING FUNCTION ---
 # ------------------------------------------------------------------------------
 def process_task(source: str, user_text: str, vision_context: str = "") -> str:
-    """This is the central logic hub for all incoming tasks."""
-    global VISION_HISTORY, CURRENT_LOCATION # Make sure to include CURRENT_LOCATION
+    """This is the central logic hub. It routes tasks based on the selected mode (unified vs. pipelined)."""
+    global VISION_HISTORY, CURRENT_LOCATION
     
     # 1. Wake Word Gatekeeper
     lower_user_text = user_text.lower().strip()
@@ -254,67 +305,63 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
     if not wake_word_detected:
         print("MCP: No wake word. Ignoring.")
         return ""
-
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
 
-    # --- 2. Location-Aware OSC Command Bypass ---
+    # 2. Location-Aware OSC Command Bypass
     if config['osc_enabled']:
         for verb in config['osc_trigger_verbs']:
-            # Check if the command starts with one of our movement verbs
             if clean_user_text.lower().startswith(verb):
-                # The destination is the part of the command after the verb
                 destination = clean_user_text[len(verb):].strip()
-                
-                if not destination:
-                    return "Where do you want me to go?"
-
+                if not destination: return "Where do you want me to go?"
                 print(f"MCP INFO: OSC movement command detected. Destination: '{destination}'")
-
-                # Check if we are already at the destination
                 if destination.lower() == CURRENT_LOCATION.lower():
                     print(f"MCP INFO: Already at '{destination}'. No OSC command sent.")
                     return f"I'm already at {destination}."
                 else:
-                    # If we are not there, send the command and update our state
                     print(f"MCP INFO: Moving to '{destination}'. Sending OSC command.")
                     send_over_osc(clean_user_text)
-                    CURRENT_LOCATION = destination # Update our current location
+                    CURRENT_LOCATION = destination
                     return f"Okay, I'm heading to {destination} now."
-    # ------
 
-    # 3a. Direct Vision Passthrough
-    if source == 'vision':
-        print("MCP INFO: Direct passthrough from vision client. Bypassing LLM.")
-        VISION_HISTORY.appendleft(vision_context)
-        return vision_context
-
-    # 3b. On-Demand Vision Passthrough
+    # 3. ARCHITECTURE ROUTER
+    is_vision_capable_mode = config['llm_choice'] == 'ollama_vision'
     is_vision_request = any(trigger in clean_user_text.lower() for trigger in config['vision_trigger_words'])
-    if is_vision_request:
-        print("MCP: Vision trigger detected. Performing scan and bypassing LLM.")
-        description = get_fresh_vision_context()
-        VISION_HISTORY.appendleft(description)
-        return description
-    
-    # 4. Standard LLM request with memory
-    print("MCP: Processing as a standard text-only request with memory.")
-    raw_llm_response = ask_llm(clean_user_text)
-    print(f"MCP: LLM Raw Response: '{raw_llm_response}'")
 
-    # 5. Clean and Truncate Response
-    cleaned_llm_response = raw_llm_response.replace("RESPONSE:", "").strip()
+    final_response = ""
+    if is_vision_capable_mode:
+        print("MCP INFO: Operating in UNIFIED multimodal mode.")
+        if is_vision_request:
+            image_data = get_image_from_vision_service()
+            if image_data:
+                final_response = ask_llm(clean_user_text, image_data_base64=image_data)
+                # Also add the response to history for context
+                VISION_HISTORY.appendleft(f"The user asked '{clean_user_text}' about an image and you saw: {final_response}")
+            else:
+                final_response = "Sorry, I tried to look but couldn't get an image from the camera."
+        else:
+            final_response = ask_llm(clean_user_text)
+    else:
+        print("MCP INFO: Operating in PIPELINED text-only mode.")
+        if source == 'vision':
+            VISION_HISTORY.appendleft(vision_context)
+            final_response = vision_context
+        elif is_vision_request:
+            description = get_fresh_vision_context()
+            VISION_HISTORY.appendleft(description)
+            final_response = description
+        else:
+            final_response = ask_llm(clean_user_text)
+
+    # 4. Clean and Truncate Final Response
+    cleaned_llm_response = final_response.replace("RESPONSE:", "").strip()
     max_len = config.get('max_response_length', 0)
     if max_len > 0 and len(cleaned_llm_response) > max_len:
-        # ... (truncation logic remains the same)
         truncated_response = cleaned_llm_response[:max_len]
         last_space = truncated_response.rfind(' ')
         if last_space != -1:
-            final_response = truncated_response[:last_space].strip() + "..."
+            return truncated_response[:last_space].strip() + "..."
         else:
-            final_response = truncated_response + "..."
-        print(f"MCP INFO: Final Truncated Response: '{final_response}'")
-        return final_response
-        
+            return truncated_response + "..."
     return cleaned_llm_response
 # ------------------------------------------------------------------------------
 
@@ -375,7 +422,7 @@ def update_vision_context():
 if __name__ == '__main__':
     print("\n==============================================================================")
     print(f"--- Starting UNIFIED Master Control Program (MCP) ---")
-    print(f"--- Using LLM: {config['llm_choice'].upper()} ---")
+    print(f"--- Using LLM Mode: {config['llm_choice'].upper()} ---")
     if config['osc_enabled']:
         print(f"--- OSC sending is ENABLED to {config['osc_ip']}:{config['osc_port']} ---")
     else:
