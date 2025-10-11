@@ -33,27 +33,35 @@ def load_config():
     config.read(config_file)
     settings = {}
     try:
+        # System Prompt
         settings['system_prompt'] = config.get('SystemPrompt', 'prompt', fallback='').strip()
+
+        # MCP Core
         settings['llm_choice'] = config.get('MCP', 'llm_choice')
         settings['host'] = config.get('MCP', 'host')
         settings['port'] = config.getint('MCP', 'port')
+        
+        # Assistant Behavior
         settings['max_response_length'] = config.getint('Assistant', 'max_response_length', fallback=0)
         raw_wake_words = config.get('Assistant', 'wake_words', fallback='')
         settings['wake_words'] = [word.strip().lower() for word in raw_wake_words.split(',') if word.strip()]
         raw_command_verbs = config.get('Assistant', 'command_verbs', fallback='')
         settings['command_verbs'] = [verb.strip().lower() for verb in raw_command_verbs.split(',') if verb.strip()]
         
-        # Vision Service URLs
+        # Vision Service
         settings['vision_service_scan_url'] = config.get('VisionService', 'scan_url')
         settings['vision_service_get_image_url'] = config.get('VisionService', 'vision_service_get_image_url', fallback='')
         raw_triggers = config.get('VisionService', 'vision_trigger_words', fallback='')
         settings['vision_trigger_words'] = [word.strip().lower() for word in raw_triggers.split(',') if word.strip()]
 
-        # External Service Integrations
+        # Social Stream (with multi-platform support)
         settings['social_stream_enabled'] = config.getboolean('SocialStream', 'enabled', fallback=False)
         settings['social_stream_session_id'] = config.get('SocialStream', 'session_id')
-        settings['social_stream_target_platform'] = config.get('SocialStream', 'target_platform')
+        raw_platforms = config.get('SocialStream', 'target_platforms', fallback='')
+        settings['social_stream_targets'] = [p.strip() for p in raw_platforms.split(',') if p.strip()]
         settings['social_stream_api_url'] = config.get('SocialStream', 'api_url')
+        
+        # StyleTTS
         settings['styletts_enabled'] = config.getboolean('StyleTTS', 'enabled', fallback=False)
         settings['styletts_url'] = config.get('StyleTTS', 'tts_url')
         
@@ -73,7 +81,7 @@ def load_config():
         settings['osc_trigger_verbs'] = [verb.strip().lower() for verb in raw_osc_verbs.split(',') if verb.strip()]
 
     except Exception as e:
-        sys.exit(f"FATAL ERROR: Missing a setting in '{config_file}'. Details: {e}")
+        sys.exit(f"FATAL ERROR: A setting is missing or invalid in '{config_file}'. Details: {e}")
     return settings
 # ------------------------------------------------------------------------------
 
@@ -248,63 +256,82 @@ def sanitize_for_tts(text: str) -> str:
     return re.sub(r'\s+', ' ', sanitized_text).strip()
 
 def send_to_social_stream(text_to_send: str):
-    """Sends the raw, emoji-friendly text to Social Stream Ninja with full debugging."""
+    """Broadcasts the text to ALL configured Social Stream Ninja platforms."""
+    # First, check if the entire feature is enabled in the config file.
     if not config.get('social_stream_enabled', False):
-        print("MCP DEBUG: Did not send to Social Stream because it is disabled in mcp_settings.ini.")
+        # This is a silent exit, but you could add a print statement if you want to know it's being skipped.
+        # print("MCP DEBUG: Social Stream is disabled, skipping send.")
         return
 
+    # Don't send empty messages or internal action commands.
     if not text_to_send or text_to_send.startswith("ACTION_GOTO:"):
         return
 
+    # Retrieve the list of target platforms and other necessary settings from the config.
+    targets = config.get('social_stream_targets', [])
     session_id = config.get('social_stream_session_id')
     api_url = config.get('social_stream_api_url')
-    target_platform = config.get('social_stream_target_platform')
     
-    if not all([session_id, api_url, target_platform]):
-        print("MCP DEBUG: Did not send to Social Stream because one or more required settings (session_id, api_url, target_platform) are missing in mcp_settings.ini.")
+    # Check if all the required settings are present and not empty.
+    if not all([targets, session_id, api_url]):
+        print("MCP DEBUG: Did not send to Social Stream because one or more required settings (target_platforms, session_id, api_url) are missing or empty in mcp_settings.ini.")
         return
 
-    # This is the line that was missing. It builds the final URL.
-    url = f"{api_url}/{session_id}"
-    payload = {"action": "sendChat", "value": text_to_send, "target": target_platform}
+    # --- This is the main broadcasting loop ---
+    print(f"MCP INFO: Broadcasting to Social Stream targets: {targets}")
     
-    print(f"MCP DEBUG: Attempting to send to Social Stream Ninja at URL: {url}")
-    print(f"MCP INFO: Sending to Social Stream Ninja -> '{text_to_send}'")
-    
-    try:
-        # This is the line that actually sends the request.
-        requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10).raise_for_status()
-        print("MCP INFO: Social Stream Ninja accepted the message.")
-    except Exception as e:
-        print(f"MCP ERROR: Could not send to Social Stream Ninja. Details: {e}")
-
-def send_to_tts(text_to_speak: str):
-    """Sanitizes the text and then sends it to the StyleTTS2 server."""
-    if not config.get('styletts_enabled', False): return
-    if not text_to_speak or text_to_speak.startswith("ACTION_GOTO:"): return
-    # ... (function body)
-    pass
+    # Loop through each target platform from your settings file.
+    for target in targets:
+        # Construct the full URL and the payload for the current target.
+        url = f"{api_url}/{session_id}"
+        payload = {"action": "sendChat", "value": text_to_send, "target": target}
+        
+        print(f"  -> Sending to '{target}'...")
+        
+        try:
+            # The error handling is INSIDE the loop.
+            # This makes the function robust: if one platform fails (e.g., Twitch is offline),
+            # it will log the error and continue trying the other configured platforms.
+            response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+            response.raise_for_status()
+            print(f"  -> SUCCESS: Message accepted for '{target}'.")
+        except Exception as e:
+            print(f"  -> FAILED: Could not send to '{target}'. Details: {e}")
 # ------------------------------------------------------------------------------
 
 
 # --- 4. UNIVERSAL PROCESSING FUNCTION ---
 # ------------------------------------------------------------------------------
 def process_task(source: str, user_text: str, vision_context: str = "") -> str:
-    """This is the central logic hub. It routes tasks based on the selected mode (unified vs. pipelined)."""
+    """This is the central logic hub with improved, more flexible wake word detection."""
     global VISION_HISTORY, CURRENT_LOCATION
     
-    # 1. Wake Word Gatekeeper
+    # --- [NEW] 1. FLEXIBLE WAKE WORD GATEKEEPER ---
     lower_user_text = user_text.lower().strip()
     wake_word_detected = False
-    clean_user_text = user_text
+    clean_user_text = ""
+    
     for word in config['wake_words']:
-        if lower_user_text.startswith(word):
+        # Find the position of the wake word in the sentence
+        wake_word_pos = lower_user_text.find(word)
+        
+        # Check if the wake word was found near the beginning of the sentence
+        # (e.g., within the first 15 characters, to avoid accidental triggers in long sentences)
+        if 0 <= wake_word_pos < 15:
             wake_word_detected = True
-            clean_user_text = user_text[len(word):].strip()
-            break
+            # The clean text is everything AFTER the wake word
+            start_of_clean_text = wake_word_pos + len(word)
+            clean_user_text = user_text[start_of_clean_text:].strip()
+            # If the character after the wake word is a common punctuation mark, strip it.
+            if clean_user_text and clean_user_text[0] in [',', '.', ':', ';']:
+                clean_user_text = clean_user_text[1:].strip()
+            break # Stop after finding the first valid wake word
+            
     if not wake_word_detected:
-        print("MCP: No wake word. Ignoring.")
+        print(f"MCP: No wake word found near the start of '{user_text}'. Ignoring.")
         return ""
+    # --- [END NEW] ---
+
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
 
     # 2. Location-Aware OSC Command Bypass
@@ -334,7 +361,6 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
             image_data = get_image_from_vision_service()
             if image_data:
                 final_response = ask_llm(clean_user_text, image_data_base64=image_data)
-                # Also add the response to history for context
                 VISION_HISTORY.appendleft(f"The user asked '{clean_user_text}' about an image and you saw: {final_response}")
             else:
                 final_response = "Sorry, I tried to look but couldn't get an image from the camera."
@@ -363,7 +389,6 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
         else:
             return truncated_response + "..."
     return cleaned_llm_response
-# ------------------------------------------------------------------------------
 
 
 # --- 5. API ENDPOINTS ---
