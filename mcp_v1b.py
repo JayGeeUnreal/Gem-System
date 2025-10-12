@@ -18,7 +18,7 @@ import platform
 import google.generativeai as genai
 import re
 import datetime
-import chromadb # The new, reliable vector database
+import chromadb
 from collections import deque
 from pythonosc import udp_client, osc_message_builder
 
