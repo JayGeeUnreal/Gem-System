@@ -6,7 +6,7 @@
 # - A unified multimodal mode ('ollama_vision') for models like Llava/Gemma.
 # - Pipelined modes ('ollama', 'gemini') for text-only LLMs.
 # - A THREAD-SAFE unified RAG( ChromaDB) memory system with a robust, manual loader for the
-#   sqlite-vec extension to ensure compatibility.
+#   RAG using chromaDb
 # - Location awareness, OSC command bypass, multi-platform broadcasting & more.
 # ==============================================================================
 import requests
