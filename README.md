@@ -1,3 +1,4 @@
+Made with Gemini.....
 # Unified Multimodal AI Control System
 
 This project is a sophisticated AI system designed around a central "brain" called the **Master Control Program (MCP)**. It features a flexible, multimodal architecture, allowing it to process and understand text, images, and audio. This design enables it to operate in a unified mode—processing multiple data types at once—or in specialized pipelines that handle each type of input separately.
