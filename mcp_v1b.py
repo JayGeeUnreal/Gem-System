@@ -6,7 +6,7 @@
 # - A unified multimodal mode ('ollama_vision') for models like Llava/Gemma.
 # - Pipelined modes ('ollama', 'gemini') for text-only LLMs.
 # - A THREAD-SAFE unified RAG( ChromaDB) memory system with a robust, manual loader for the
-#   RAG using chromaDb
+#   sqlite-vec extension to ensure compatibility.
 # - Location awareness, OSC command bypass, multi-platform broadcasting & more.
 # ==============================================================================
 import requests
@@ -18,7 +18,8 @@ import platform
 import google.generativeai as genai
 import re
 import datetime
-import chromadb
+import time 
+import chromadb 
 from collections import deque
 from pythonosc import udp_client, osc_message_builder
 
@@ -84,6 +85,7 @@ gemini_model = None
 
 VISION_HISTORY = deque(maxlen=5)
 CURRENT_LOCATION = "the stream room"
+RAG_QUERY_CACHE = {} # Initialize the cache CAG
 
 try:
     chroma_client = chromadb.PersistentClient(path="gem_memory_db")
@@ -94,7 +96,6 @@ except Exception as e:
     sys.exit(f"MCP FATAL ERROR: Could not initialize ChromaDB. Details: {e}")
 
 def verify_ollama_models():
-    """Checks if the configured Ollama models are actually available on the server."""
     if "ollama" not in config['llm_choice']: return
     print("MCP INFO: Verifying that required Ollama models are available...")
     try:
@@ -151,7 +152,6 @@ if config['osc_enabled']:
 # --- 3. CORE HELPER FUNCTIONS ---
 # ------------------------------------------------------------------------------
 def get_embedding(text: str = None, image_base64: str = None) -> list[float]:
-    """Gets a vector embedding from Ollama using a dedicated multimodal embedding model."""
     if not text and not image_base64: return None
     model_to_use = config.get('ollama_embedding_model')
     if not model_to_use:
@@ -169,7 +169,6 @@ def get_embedding(text: str = None, image_base64: str = None) -> list[float]:
         return None
 
 def add_chat_to_memory(speaker: str, text: str):
-    """Creates an embedding and stores it in the ChromaDB collection."""
     vector = get_embedding(text=text)
     if vector:
         try:
@@ -184,7 +183,6 @@ def add_chat_to_memory(speaker: str, text: str):
             print(f"MCP ERROR: Failed to add chat to ChromaDB. Details: {e}")
 
 def add_image_to_memory(image_identifier: str, image_base64: str):
-    """Creates an embedding and stores it in the ChromaDB collection."""
     vector = get_embedding(image_base64=image_base64)
     if vector:
         try:
@@ -197,58 +195,86 @@ def add_image_to_memory(image_identifier: str, image_base64: str):
         except Exception as e:
             print(f"MCP ERROR: Failed to add image to ChromaDB. Details: {e}")
 
-def ask_llm(user_content: str, image_data_base64: str = None) -> str:
-    """Sends the user's content and a system prompt to the selected LLM."""
+def ask_llm(user_content: str, image_data_base64: str = None) -> tuple[str, float]:
+    """Sends content to the LLM and returns the response AND the duration."""
     print(f"MCP INFO: Sending prompt to {config['llm_choice'].upper()}...")
+    start_time = time.monotonic()
+    
+    final_response_text = ""
+    duration = 0.0
     try:
-        response = None
         system_prompt = config.get('system_prompt', '')
         if config['llm_choice'] in ['ollama_vision', 'ollama']:
             model = config['ollama_vision_model'] if config['llm_choice'] == 'ollama_vision' else config['ollama_model']
             user_message = {"role": "user", "content": user_content}
-            if image_data_base64:
-                user_message["images"] = [image_data_base64]
+            if image_data_base64: user_message["images"] = [image_data_base64]
             messages = [{"role": "system", "content": system_prompt}, user_message]
             payload = {"model": model, "messages": messages, "stream": False}
             response = requests.post(config['ollama_api_url'], json=payload, timeout=60)
+            response.raise_for_status()
+            final_response_text = response.json().get('message', {}).get('content', '').strip()
         elif config['llm_choice'] == 'gemini':
             final_gemini_prompt = f"{system_prompt}\n\n---\n\n{user_content}"
             gemini_response = gemini_model.generate_content(final_gemini_prompt)
-            return gemini_response.text.strip()
-        if response:
-            response.raise_for_status()
-            return response.json().get('message', {}).get('content', '').strip()
-        return "Error: LLM choice not recognized."
+            final_response_text = gemini_response.text.strip()
+        else:
+            final_response_text = "Error: LLM choice not recognized."
     except Exception as e:
         print(f"MCP ERROR: An exception occurred in ask_llm. Details: {e}")
-        return "Sorry, I encountered an error while trying to think."
+        final_response_text = "Sorry, I encountered an error while trying to think."
+    finally:
+        duration = time.monotonic() - start_time
+    
+    return final_response_text, duration
 
 def retrieve_from_rag(user_query: str) -> str:
-    """Performs a RAG search and returns a formatted context string. DOES NOT CALL LLM."""
-    print(f"MCP INFO: RAG retrieval triggered for query: '{user_query}'")
-    query_vector = get_embedding(text=user_query)
-    if not query_vector: return ""
-    context_str = "CONTEXT FROM LONG-TERM MEMORY:\n"
-    found_context = False
-    try:
-        chat_results = chat_collection.query(query_embeddings=[query_vector], n_results=3)
-        if chat_results and chat_results['ids'][0]:
-            context_str += "[Relevant Chat History]\n"
-            for data in chat_results['metadatas'][0]:
-                context_str += f"- {data['speaker']} said: \"{data['text_content']}\"\n"
-            found_context = True
-        image_results = image_collection.query(query_embeddings=[query_vector], n_results=1)
-        if image_results and image_results['ids'][0]:
-            context_str += "\n[Relevant Image]\n"
-            context_str += f"- An image was found, identified as: '{image_results['ids'][0][0]}'\n"
-            found_context = True
-    except Exception as e:
-        print(f"MCP ERROR: Failed during RAG search with ChromaDB. Details: {e}")
-        return ""
-    return context_str if found_context else ""
+    """Performs a RAG search using a cache and times the entire operation."""
+    start_time = time.monotonic()
+    
+    if user_query in RAG_QUERY_CACHE:
+        print(f"MCP INFO: RAG Cache HIT for query: '{user_query}'", flush=True)
+        result_to_return = RAG_QUERY_CACHE[user_query]
+    else:
+        print(f"MCP INFO: RAG Cache MISS. Querying ChromaDB for: '{user_query}'", flush=True)
+        query_vector = get_embedding(text=user_query)
+        if not query_vector: 
+            duration = time.monotonic() - start_time
+            print(f"--- RAG retrieval FAILED in {duration:.4f} seconds. ---", flush=True)
+            return ""
+
+        context_str = "CONTEXT FROM LONG-TERM MEMORY:\n"
+        found_context = False
+        try:
+            chat_results = chat_collection.query(query_embeddings=[query_vector], n_results=3)
+            if chat_results and chat_results['ids'][0]:
+                context_str += "[Relevant Chat History]\n"
+                for data in chat_results['metadatas'][0]:
+                    context_str += f"- {data['speaker']} said: \"{data['text_content']}\"\n"
+                found_context = True
+            
+            image_results = image_collection.query(query_embeddings=[query_vector], n_results=1)
+            if image_results and image_results['ids'][0]:
+                context_str += "\n[Relevant Image]\n"
+                context_str += f"- An image was found, identified as: '{image_results['ids'][0][0]}'\n"
+                found_context = True
+                
+        except Exception as e:
+            print(f"MCP ERROR: Failed during RAG search with ChromaDB. Details: {e}", flush=True)
+            duration = time.monotonic() - start_time
+            print(f"--- RAG retrieval FAILED in {duration:.4f} seconds. ---", flush=True)
+            return ""
+        
+        final_context = context_str if found_context else ""
+        
+        RAG_QUERY_CACHE[user_query] = final_context
+        result_to_return = final_context
+
+    duration = time.monotonic() - start_time
+    print(f"--- RAG retrieval took {duration:.4f} seconds. ---", flush=True)
+    
+    return result_to_return
 
 def send_over_osc(command_text: str):
-    """Sends a command directly over OSC."""
     if not config['osc_enabled'] or not osc_client: return
     try:
         builder = osc_message_builder.OscMessageBuilder(address=config['osc_address'])
@@ -258,7 +284,6 @@ def send_over_osc(command_text: str):
     except Exception as e: print(f"MCP ERROR: Failed to send OSC message. Details: {e}")
 
 def get_image_from_vision_service() -> str:
-    """Gets a Base64 encoded image from the vision service."""
     url = config.get('vision_service_get_image_url')
     if not url:
         print("MCP ERROR: The 'vision_service_get_image_url' is not set in mcp_settings.ini.")
@@ -277,7 +302,6 @@ def get_image_from_vision_service() -> str:
         return None
 
 def get_fresh_vision_context() -> str:
-    """Gets a text description from the legacy vision service."""
     url = config.get('vision_service_scan_url')
     if not url: return "Error: Vision service URL not configured."
     print(f"MCP CORE: Requesting a fresh vision scan from {url}...")
@@ -288,7 +312,6 @@ def get_fresh_vision_context() -> str:
     except Exception as e: return f"Error: Could not reach vision service. Is it running? Details: {e}"
 
 def send_to_social_stream(text_to_send: str):
-    """Broadcasts text to all configured Social Stream platforms."""
     if not config.get('social_stream_enabled', False): return
     if not text_to_send or text_to_send.startswith("ACTION_GOTO:"): return
     targets = config.get('social_stream_targets', [])
@@ -309,7 +332,6 @@ def send_to_social_stream(text_to_send: str):
             print(f"  -> FAILED: Could not send to '{target}'. Details: {e}")
 
 def send_to_tts(text_to_speak: str):
-    """Sends text to the TTS server."""
     if not config.get('styletts_enabled', False): return
     if not text_to_speak or text_to_speak.startswith("ACTION_GOTO:"): return
     url = config.get('styletts_url')
@@ -328,11 +350,10 @@ def send_to_tts(text_to_speak: str):
 
 # --- 4. UNIVERSAL PROCESSING FUNCTION ---
 # ------------------------------------------------------------------------------
-def process_task(source: str, user_text: str, vision_context: str = "") -> str:
-    """The central logic hub with a clear separation of retrieval and generation."""
+def process_task(source: str, user_text: str, vision_context: str = "") -> tuple[str, float]:
+    """The central logic hub. Returns the response AND the LLM duration."""
     global VISION_HISTORY, CURRENT_LOCATION
     
-    # 1. Case-Insensitive, Strict Wake Word Gatekeeper
     wake_word_detected, clean_user_text = False, ""
     for word in config['wake_words']:
         if not word: continue
@@ -346,19 +367,17 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
             break
     if not wake_word_detected:
         print(f"MCP: No valid wake word pattern found in '{user_text}'. Ignoring.")
-        return ""
+        return "", 0.0
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
     add_chat_to_memory("User", clean_user_text)
 
-    # 2. Check for special commands and route accordingly
-    is_rag_request = any(clean_user_text.lower().startswith(trigger) for trigger in config['rag_trigger_words'])
     is_osc_request = config['osc_enabled'] and any(clean_user_text.lower().startswith(verb) for verb in config['osc_trigger_verbs'])
-    is_vision_request = any(trigger in clean_user_text.lower() for trigger in config['vision_trigger_words'])
+    is_vision_request = any(clean_user_text.lower().startswith(trigger) for trigger in config['vision_trigger_words'])
     
     final_response = ""
-
+    llm_duration = 0.0
+    
     if is_osc_request:
-        # --- OSC WORKFLOW (TRUE BYPASS) ---
         verb_found = next((verb for verb in config['osc_trigger_verbs'] if clean_user_text.lower().startswith(verb)), "")
         destination = clean_user_text[len(verb_found):].strip()
         if not destination:
@@ -369,25 +388,21 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
             send_over_osc(clean_user_text); CURRENT_LOCATION = destination
             final_response = f"Okay, I'm heading to {destination} now."
     elif is_vision_request:
-        # --- VISION WORKFLOW (SPECIAL PROMPT) ---
         if config['llm_choice'] == 'ollama_vision':
             image_data = get_image_from_vision_service()
             if image_data:
                 vision_prompt = f"In one or two short sentences, describe the main subject of the attached image. The user's original question was: '{clean_user_text}'"
-                final_response = ask_llm(vision_prompt, image_data_base64=image_data)
+                final_response, llm_duration = ask_llm(vision_prompt, image_data_base64=image_data)
                 image_id = f"image_seen_at_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 add_image_to_memory(image_id, image_data)
                 VISION_HISTORY.appendleft(f"User asked about an image ({image_id}), you saw: {final_response}")
             else: final_response = "Sorry, I couldn't get an image from the camera."
-        else: # Pipelined legacy mode
+        else:
             description = get_fresh_vision_context()
             VISION_HISTORY.appendleft(description); final_response = description
     else:
         # --- RAG AND STANDARD TEXT WORKFLOW ---
-        # Start by gathering all available context.
-        long_term_memory = ""
-        if is_rag_request:
-            long_term_memory = retrieve_from_rag(clean_user_text)
+        long_term_memory = retrieve_from_rag(clean_user_text)
         
         location_context = f"Your current location is: {CURRENT_LOCATION}."
         history_context = ""
@@ -395,13 +410,11 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
             history_items = "\n".join(f"- {item}" for item in VISION_HISTORY)
             history_context = f"Short term memory of recent events:\n{history_items}"
         
-        # Assemble the final prompt for the LLM
         prompt_for_llm = f"{long_term_memory}\n{location_context}\n{history_context}\n\n---\nBased on all available context, answer the user's question:\n\"{clean_user_text}\""
-        final_response = ask_llm(prompt_for_llm)
+        final_response, llm_duration = ask_llm(prompt_for_llm)
 
-    # Store AI's final response and return
     add_chat_to_memory("Gem", final_response)
-    return final_response
+    return final_response, llm_duration
 # ------------------------------------------------------------------------------
 
 
@@ -415,7 +428,12 @@ def handle_chat_request():
     data = request.json
     chat_message = data.get('chatmessage', '')
     print(f"\nMCP: Received from [Chat]: '{chat_message}'")
-    final_response = process_task(source='chat', user_text=chat_message)
+    
+    final_response, llm_duration = process_task(source='chat', user_text=chat_message)
+    
+    if llm_duration > 0:
+        print(f"--- LLM processing took {llm_duration:.2f} seconds. ---", flush=True)
+        
     if final_response:
         send_to_tts(final_response)
         send_to_social_stream(final_response)
@@ -426,7 +444,12 @@ def handle_vision_request():
     data = request.json
     user_text = data.get('text', ''); vision_context = data.get('vision_context', '')
     print(f"\nMCP: Received from [Vision]: '{user_text}'")
-    final_response = process_task(source='vision', user_text=user_text, vision_context=vision_context)
+    
+    final_response, llm_duration = process_task(source='vision', user_text=user_text, vision_context=vision_context)
+    
+    if llm_duration > 0:
+        print(f"--- LLM processing took {llm_duration:.2f} seconds. ---", flush=True)
+
     if final_response:
         send_to_tts(final_response)
         send_to_social_stream(final_response)
@@ -437,7 +460,12 @@ def handle_audio_request():
     data = request.json
     user_text = data.get('text', '')
     print(f"\nMCP: Received from [Audio]: '{user_text}'")
-    final_response = process_task(source='audio', user_text=user_text)
+    
+    final_response, llm_duration = process_task(source='audio', user_text=user_text)
+
+    if llm_duration > 0:
+        print(f"--- LLM processing took {llm_duration:.2f} seconds. ---", flush=True)
+
     if final_response:
         send_to_tts(final_response)
         send_to_social_stream(final_response)
