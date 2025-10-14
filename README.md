@@ -1,3 +1,5 @@
+!! OBS !! Files in the Neurosync folder is under a dual licence and you can find the licence here https://github.com/AnimaVR/NeuroSync_Player/blob/main/LICENCE
+
 *Documentation made with the help of Gemini...*
 
 ---
