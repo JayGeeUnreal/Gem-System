@@ -1,46 +1,55 @@
-Readme.md Made with Gemini.....
-# Unified Multimodal AI Control System
+!! OBS !! Files in the Neurosync folder is under a dual licence and you can find the licence here https://github.com/AnimaVR/NeuroSync_Player/blob/main/LICENCE
+
+*Documentation made with the help of Gemini...*
+
+---
+
+## Key Features
+
+*   **Multi-Architecture Support:** Can run in a unified multimodal mode (`ollama_vision`) using models like `llava:7b` or a pipelined, text-description mode (`ollama`, `gemini`).
+*   **Unified RAG/CAG Memory:** Includes a complete long-term memory system using `ChromaDB` for both chat history and image memory, with a high-speed in-memory cache for repeated queries.
+*   **Dedicated Embedding Model:** Supports using a specific model for creating consistent vector embeddings.
+*   **Model Verification:** Includes a robust check at startup to ensure all required Ollama models are installed, preventing silent failures.
+*   **Location Awareness:** Remembers its "current location" (e.g., in Unreal Engine using nav points) and includes it as context for the LLM.
+*   **OSC Command Bypass:** Can send direct action commands to external programs like Unreal Engine without involving the LLM.
+*   **Flexible Wake Word:** Understands conversational wake words (e.g., "So Gem...") instead of just at the start of a sentence.
+*   **Multi-Platform Broadcasting:** Can send its final responses to multiple social media platforms (Discord, Twitch, etc.) at once using Social Stream Ninja.
+*   **Vision:** Uses a physical webcam or a virtual NDI stream as its visual input.
+*   **Hearing:** Listens for and transcribes spoken commands from a microphone.
+*   **Comprehensive Error Handling:** Includes detailed logging for better debugging of all integrated services.
+*   ...and more.
+
+---
+
+## Project Overview
 
 This project is a sophisticated AI system designed around a central "brain" called the **Master Control Program (MCP)**. It features a flexible, multimodal architecture, allowing it to process and understand text, images, and audio. This design enables it to operate in a unified mode—processing multiple data types at once—or in specialized pipelines that handle each type of input separately.
 
 The system is engineered to be highly interactive, not only conversing with users but also interfacing with external platforms and game engines to create a dynamic and immersive experience.
 
-## Core Components
+### Core Components
 
 At its heart, the system is comprised of several key scripts that work in concert:
 
-### Master Control Program (`mcp_v1b.py`)
-This is the central hub of the entire system. It receives inputs from all other components, decides how to process them, and orchestrates the AI's behavior.
-- **Unified & Pipelined Architecture:** Supports various LLMs and modes, including a unified multimodal mode for advanced models that can understand images and text simultaneously.
-- **Long-Term Memory:** Maintains the system's memory using a robust vector database (ChromaDB).
-- **External Communication:** Sends commands to Unreal Engine via OSC and broadcasts messages to social platforms.
+*   **Master Control Program (`mcp_v1b.py`):** This is the central hub of the entire system. It receives inputs from all other components, decides how to process them, and orchestrates the AI's behavior. It supports different language models and modes of operation, including a unified multimodal mode for advanced models that can understand images and text simultaneously. The MCP maintains the system's memory using a robust vector database (`ChromaDB`), is aware of its virtual location, and can broadcast messages to multiple platforms. Crucially, it also sends and receives commands from external applications, such as Unreal Engine via OSC.
 
-### Vision Service (`vision.py`)
-This script acts as the eyes of the system, capturing video input from a physical **webcam** or a virtual **NDI (Network Device Interface) stream**. This flexibility allows for both simple local setups and more complex production environments.
-- **Dual-Mode Capability:** It can provide raw image data for direct analysis by the MCP or use a local Vision Language Model (VLM) to generate text descriptions of what it sees.
+*   **Vision Service (`vision.py`):** This script acts as the eyes of the system, capturing video input from a physical **webcam** or a virtual **NDI (Network Device Interface) stream**. This flexibility allows for both simple local setups and more complex production environments where video is streamed over a network. The service has a dual-mode capability: it can either provide raw image data for direct analysis by the MCP or use a local Vision Language Model (VLM) to generate text descriptions of what it sees.
 
-### Audio Client (`listen.py`)
-This is the ears of the system. It continuously listens for spoken commands through a microphone.
-- **Speech-to-Text:** Uses a local Whisper model to transcribe any speech it hears into text and sends it to the MCP for interpretation and action.
+*   **Audio Client (`listen.py`):** This is the ears of the system. It continuously listens for spoken commands through a microphone. Using a local Whisper model, it transcribes any speech it hears into text and sends it to the MCP for interpretation and action.
 
-### Facial Animation (`watcher_to_face.py` and `neurosync_local_api.py`)
-These scripts give the system a face.
-- `watcher_to_face.py`: Monitors for audio output from the TTS engine and triggers corresponding facial animations.
-- `neurosync_local_api.py`: Provides an API to convert audio signals into the detailed facial movements (blendshapes) needed for realistic animation.
+*   **Facial Animation (`watcher_to_face.py` and `neurosync_local_api.py`):** These scripts give the system a face. The `watcher_to_face.py` script monitors for audio output and triggers corresponding facial animations. The `neurosync_local_api.py` provides an interface to convert audio signals into the detailed facial movements (blendshapes) needed for realistic animation.
 
-## External Integrations
+### External Integrations
 
 A key feature of this system is its ability to connect with other services and applications:
 
-### Social Stream Ninja
-For text-based chat, the system integrates with Social Stream Ninja. This allows the MCP to receive chat messages from users on various social platforms (like Twitch, YouTube, etc.) and send its responses back to be broadcast to those audiences. This turns the AI into an interactive social presence.
+*   **Social Stream Ninja:** For text-based chat, the system integrates with Social Stream Ninja. This allows the MCP to receive chat messages from users on various social platforms (like Twitch, YouTube, etc.) and send its responses back to be broadcast to those audiences. This turns the AI into an interactive social presence.
 
-### Unreal Engine (via OSC)
-The system communicates with Unreal Engine using the **Open Sound Control (OSC)** protocol. This allows the MCP to send commands directly into the game engine to control an avatar, trigger events, change the environment, or interact with objects, making the AI a true agent within a virtual world.
+*   **Unreal Engine (via OSC):** The system communicates with Unreal Engine using the **Open Sound Control (OSC)** protocol. This allows the MCP to send commands directly into the game engine to control an avatar, trigger events, change the environment, or interact with objects, making the AI a true agent within a virtual world.
 
-## How It Works
+### How It Works
 
-The system is designed to be highly modular. A typical interaction follows this workflow:
+The system is designed to be highly modular. A typical interaction can follow several paths:
 
 1.  **Input:** An interaction is initiated. This can happen in two primary ways:
     *   A user speaks a command, which is picked up by the **Audio Client**, transcribed, and sent to the MCP.
@@ -55,3 +64,6 @@ The system is designed to be highly modular. A typical interaction follows this 
     *   **Chat Broadcast:** The text response is also sent back through **Social Stream Ninja** to be displayed in the chat.
 
 This unified and pipelined approach allows for a rich, interactive experience where the AI can not only understand and respond to users across multiple platforms but also perceive and react to its visual environment, all while presenting a dynamic and expressive virtual persona in Unreal Engine.
+34.4s
+Use Arrow Up and Arrow Down to select a turn, Enter to jump to it, and Escape to return to the chat.
+
