@@ -1,7 +1,7 @@
 !! OBS !! Files in the Neurosync folder is under a dual licence and you can find the licence here https://github.com/AnimaVR/NeuroSync_Player/blob/main/LICENCE
 
 
-I´m not a programmer so this code propobly isnt the fastest or best. This Is something i made because i couldn't find a system that had what i wanted. And with this system its "easier" to add more functions/Tools. So hopefully someone finds it interesting or usefull. The main goal with the project was to make an AI "VTuber" or what ever to call it, that "lives" inside Unreal Engine and since it for an AI "VTuber" it is connected to Social Stream Ninja so stream chats can interact with it.
+I´m not a programmer so this code propobly isnt the fastest or best. This Is something i made because i couldn't find a system that had what i wanted. And with this system its "easier" to add more functions/Tools. So hopefully someone finds it interesting or usefull. The main goal with the project was to make an AI "VTuber" or what ever to call it, that "lives" inside Unreal Engine and since it is for an AI "VTuber" it is connected to Social Stream Ninja so stream chats can interact with it.
 
 
 *Documentation made with the help of Gemini...*
