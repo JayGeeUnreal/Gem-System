@@ -4,7 +4,7 @@
 # This script can operate in two modes based on the 'enable_local_vlm' setting:
 #
 # 1. VLM Mode (enable_local_vlm = true):
-#    - Loads a local VLM (SmolVLM) to generate text descriptions of scenes.
+#    - Loads a local VLM (e.g., SmolVLM) to generate text descriptions of scenes.
 #    - Provides the `/scan` endpoint for the pipelined MCP modes.
 #
 # 2. Camera Service Mode (enable_local_vlm = false):
@@ -30,7 +30,7 @@ import io
 # --- 1. CONFIGURATION & GLOBAL VARIABLES ---
 # ------------------------------------------------------------------------------
 config = {}
-SMOL_VLM_MODEL_ID = "HuggingFaceTB/SmolVLM-500M-Instruct"
+# SMOL_VLM_MODEL_ID has been removed from here and will be loaded from config.
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
 
@@ -46,30 +46,50 @@ vision_app = Flask("VisionService")
 # --- 2. CORE FUNCTIONS ---
 # ------------------------------------------------------------------------------
 def load_config():
-    """Loads all settings from vision_settings.ini."""
+    """Loads all settings from mcp_settings.ini."""
     global config
     parser = configparser.ConfigParser()
-    config_file = 'vision_settings.ini'
-    if not os.path.exists(config_file): sys.exit(f"FATAL: Config '{config_file}' not found.")
+    config_file = 'mcp_settings.ini' # Now reads from the central MCP config file
+    if not os.path.exists(config_file):
+        sys.exit(f"FATAL: Config '{config_file}' not found.")
+    
     parser.read(config_file)
     settings = {}
     try:
-        settings['enable_local_vlm'] = parser.getboolean('Vision', 'enable_local_vlm', fallback=False)
-        settings['camera_index'] = parser.getint('Vision', 'camera_index')
-        raw_triggers = parser.get('Vision', 'vision_trigger_words', fallback='')
+        # --- Read from [VisionService] section ---
+        settings['enable_local_vlm'] = parser.getboolean('VisionService', 'enable_local_vlm', fallback=False)
+        settings['camera_index'] = parser.getint('VisionService', 'camera_index')
+        raw_triggers = parser.get('VisionService', 'vision_trigger_words', fallback='')
         settings['vision_trigger_words'] = [word.strip().lower() for word in raw_triggers.split(',') if word.strip()]
-        settings['mcp_url'] = parser.get('MCP', 'mcp_url')
-        settings['mcp_update_vision_url'] = parser.get('MCP', 'mcp_update_vision_url')
-    except Exception as e: sys.exit(f"FATAL: Setting missing or invalid in '{config_file}'. Details: {e}")
+        
+        # Load the VLM Model ID only if local VLM is enabled
+        if settings['enable_local_vlm']:
+            settings['smol_vlm_model_id'] = parser.get('VisionService', 'smol_vlm_model_id')
+
+        # --- Read from [MCP] section and build the URL ---
+        mcp_host = parser.get('MCP', 'host')
+        mcp_port = parser.get('MCP', 'port')
+        settings['mcp_url'] = f"http://{mcp_host}:{mcp_port}/"
+        
+    except (configparser.NoSectionError, configparser.NoOptionError, Exception) as e:
+        sys.exit(f"FATAL: Setting missing or invalid in '{config_file}'. Please check your sections and keys. Details: {e}")
+    
     config = settings
 
 def initialize_models():
     """Loads the VLM. This function is only called if enable_local_vlm is true."""
     global processor, smol_vlm_model
-    print(f"VISION INFO: Loading VLM: {SMOL_VLM_MODEL_ID} on '{device}'. (This may take a moment)...")
+    
+    # Get model ID from the config dictionary
+    model_id = config.get('smol_vlm_model_id')
+    if not model_id:
+        sys.exit("FATAL: 'smol_vlm_model_id' is not defined in mcp_settings.ini under [VisionService].")
+
+    print(f"VISION INFO: Loading VLM: {model_id} on '{device}'. (This may take a moment)...")
     try:
-        processor = AutoProcessor.from_pretrained(SMOL_VLM_MODEL_ID, trust_remote_code=True)
-        smol_vlm_model = AutoModelForVision2Seq.from_pretrained(SMOL_VLM_MODEL_ID, torch_dtype=torch_dtype, trust_remote_code=True, low_cpu_mem_usage=True).to(device)
+        # Use the 'model_id' variable loaded from the config
+        processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+        smol_vlm_model = AutoModelForVision2Seq.from_pretrained(model_id, torch_dtype=torch_dtype, trust_remote_code=True, low_cpu_mem_usage=True).to(device)
         print("VISION INFO: VLM loaded successfully.")
     except Exception as e: sys.exit(f"FATAL: Could not load VLM. Details: {e}")
 
@@ -140,7 +160,7 @@ def send_to_mcp(user_text: str, vision_description: str) -> str:
 def trigger_scan():
     """[LEGACY] Endpoint for pipelined mode. Returns a text description of the scene."""
     if not config.get('enable_local_vlm', False):
-        return jsonify({"error": "Local VLM is not enabled in vision_settings.ini"}), 503
+        return jsonify({"error": "Local VLM is not enabled in mcp_settings.ini"}), 503
     
     global camera_stream
     if camera_stream is None: return jsonify({"error": "Camera stream not initialized"}), 500
@@ -185,7 +205,7 @@ def user_input_loop():
     """Handles interactive commands. Only fully functional if local VLM is enabled."""
     if not config.get('enable_local_vlm', False):
         print("\n--- Interactive Client Disabled ---")
-        print("Set 'enable_local_vlm = true' in vision_settings.ini to use this feature.")
+        print("Set 'enable_local_vlm = true' in mcp_settings.ini to use this feature.")
         return
 
     global camera_stream
