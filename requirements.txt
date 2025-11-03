@@ -1,3 +1,4 @@
+hf_xet
 Flask
 Flask-Cors
 google-generativeai
