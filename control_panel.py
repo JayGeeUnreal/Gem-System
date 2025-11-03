@@ -11,6 +11,7 @@ import configparser
 import cv2
 from PIL import Image, ImageTk
 import traceback
+import subprocess  # Required import
 
 # --- Configuration ---
 MIN_DB = -60.0
@@ -27,7 +28,10 @@ class AudioApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Master Control Panel")
-        self.geometry("1200x750")
+        
+        # --- Change the window size here ---
+        self.geometry("1400x880") 
+        
         self.config = configparser.ConfigParser(interpolation=None)
         self.ini_entries = {}
         self.input_audio_queue = queue.Queue()
@@ -128,6 +132,7 @@ class AudioApp(tk.Tk):
         self.video_label.pack(fill="both", expand=True)
         vision_settings_frame = ttk.Frame(vision_paned_window, padding=(10, 10))
         vision_paned_window.add(vision_settings_frame)
+        
         controls_frame = ttk.Frame(vision_settings_frame)
         controls_frame.pack(fill="x", pady=5, anchor="n")
         ttk.Label(controls_frame, text="Available Cameras:").pack(side="left", padx=(0, 10))
@@ -142,12 +147,25 @@ class AudioApp(tk.Tk):
         ttk.Label(saved_device_frame, text="Saved Camera Index:").pack(side="left")
         self.saved_camera_device_var = tk.StringVar(value="None")
         ttk.Entry(saved_device_frame, textvariable=self.saved_camera_device_var, state="readonly").pack(side="left", fill="x", expand=True, padx=10)
+
+        vlm_frame = ttk.LabelFrame(vision_settings_frame, text="Vision Language Model Settings", padding=10)
+        vlm_frame.pack(fill="x", expand=True, pady=(10, 0), anchor="n")
+
+        ttk.Label(vlm_frame, text="SmolVLM Model ID:").pack(side="left", padx=(0, 10))
+        self.smol_vlm_entry = ttk.Entry(vlm_frame)
+        self.smol_vlm_entry.pack(side="left", fill="x", expand=True)
+        
         self.vision_ini_container = ttk.Frame(vision_settings_frame)
         self.vision_ini_container.pack(fill="both", expand=True, pady=10, anchor="n")
 
     def setup_ini_widgets(self, parent_frame):
         ini_frame = ttk.LabelFrame(parent_frame, text="mcp_settings.ini (General)")
         ini_frame.pack(fill="both", expand=True)
+        
+        # Bind mouse events for scrolling
+        ini_frame.bind('<Enter>', self._bind_mousewheel_for_right_pane)
+        ini_frame.bind('<Leave>', self._unbind_mousewheel_for_right_pane)
+        
         self.ini_canvas = tk.Canvas(ini_frame)
         scrollbar = ttk.Scrollbar(ini_frame, orient="vertical", command=self.ini_canvas.yview)
         self.scrollable_frame = ttk.Frame(self.ini_canvas)
@@ -157,12 +175,150 @@ class AudioApp(tk.Tk):
         self.ini_canvas.configure(yscrollcommand=scrollbar.set)
         self.ini_canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         scrollbar.pack(side="right", fill="y")
+        
         button_frame = ttk.Frame(parent_frame)
         button_frame.pack(fill="x", pady=(5,0))
+        
         save_button = ttk.Button(button_frame, text="Save All Settings", command=self.save_ini_file)
-        save_button.pack(side="left", expand=True, padx=5)
+        save_button.pack(side="left", expand=True, fill="x", padx=5)
+        
+        run_neurosync_button = ttk.Button(button_frame, text="1. Neurosync Local API", command=self.run_neurosync_api_script)
+        run_neurosync_button.pack(side="left", expand=True, fill="x", padx=5)
+        
+        run_watcher_button = ttk.Button(button_frame, text="2. Neurosync Watcher To Face", command=self.run_watcher_to_face_script)
+        run_watcher_button.pack(side="left", expand=True, fill="x", padx=5)
+        
+        run_script_button = ttk.Button(button_frame, text="3. MCP", command=self.run_main_script)
+        run_script_button.pack(side="left", expand=True, fill="x", padx=5)
+
+        run_styletts2_button = ttk.Button(button_frame, text="4. StyleTTS2", command=self.run_styletts2_script)
+        run_styletts2_button.pack(side="left", expand=True, fill="x", padx=5)
+
+        run_vision_button = ttk.Button(button_frame, text="5. Vision", command=self.run_vision_script)
+        run_vision_button.pack(side="left", expand=True, fill="x", padx=5)
+        
         reload_button = ttk.Button(button_frame, text="Reload All Settings", command=self.reload_ini_ui)
-        reload_button.pack(side="right", expand=True, padx=5)
+        reload_button.pack(side="left", expand=True, fill="x", padx=5)
+
+    def run_neurosync_api_script(self):
+        """Runs the neurosync local API .bat file in a new process."""
+        subfolder_name = "start_scripts"
+        bat_file_name = "start_neurosync_localapi.bat" 
+        
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
+        
+        print(f"Attempting to run: {bat_file_path}")
+        try:
+            subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            print(f"Successfully launched {bat_file_name} in a new console.")
+        except FileNotFoundError:
+            print(f"Error: The file '{bat_file_path}' was not found.")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
+        except Exception as e:
+            print(f"An error occurred while trying to run the batch file: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+
+    def run_watcher_to_face_script(self):
+        """Runs the neurosync watcher to face .bat file in a new process."""
+        subfolder_name = "start_scripts"
+        bat_file_name = "start_neurosync_watcher_to_face.bat" 
+        
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
+        
+        print(f"Attempting to run: {bat_file_path}")
+        try:
+            subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            print(f"Successfully launched {bat_file_name} in a new console.")
+        except FileNotFoundError:
+            print(f"Error: The file '{bat_file_path}' was not found.")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
+        except Exception as e:
+            print(f"An error occurred while trying to run the batch file: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+
+    def run_main_script(self):
+        """Runs the MCP .bat file from a specific subfolder in a new process."""
+        subfolder_name = "start_scripts"
+        bat_file_name = "start_mcp.bat" 
+        
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
+        
+        print(f"Attempting to run: {bat_file_path}")
+        try:
+            subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            print("Successfully launched the batch file in a new console.")
+        except FileNotFoundError:
+            print(f"Error: The file '{bat_file_path}' was not found.")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
+        except Exception as e:
+            print(f"An error occurred while trying to run the batch file: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+            
+    def run_styletts2_script(self):
+        """Runs the Start_StyleTTS2.bat file in a new process."""
+        subfolder_name = "start_scripts"
+        bat_file_name = "Start_StyleTTS2.bat" 
+        
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
+        
+        print(f"Attempting to run: {bat_file_path}")
+        try:
+            subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            print(f"Successfully launched {bat_file_name} in a new console.")
+        except FileNotFoundError:
+            print(f"Error: The file '{bat_file_path}' was not found.")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
+        except Exception as e:
+            print(f"An error occurred while trying to run the batch file: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+            
+    def run_vision_script(self):
+        """Runs the start_vision.bat file in a new process."""
+        subfolder_name = "start_scripts"
+        bat_file_name = "start_vision.bat" 
+        
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
+        
+        print(f"Attempting to run: {bat_file_path}")
+        try:
+            subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            print(f"Successfully launched {bat_file_name} in a new console.")
+        except FileNotFoundError:
+            print(f"Error: The file '{bat_file_path}' was not found.")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
+        except Exception as e:
+            print(f"An error occurred while trying to run the batch file: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+
+    def _on_right_pane_mousewheel(self, event):
+        """Handles the mouse wheel scroll event for the right settings pane."""
+        if event.num == 5 or event.delta < 0:
+            self.ini_canvas.yview_scroll(1, "units")
+        if event.num == 4 or event.delta > 0:
+            self.ini_canvas.yview_scroll(-1, "units")
+
+    def _bind_mousewheel_for_right_pane(self, event):
+        """Binds the mouse wheel event to the scroll function."""
+        self.bind_all("<MouseWheel>", self._on_right_pane_mousewheel)
+
+    def _unbind_mousewheel_for_right_pane(self, event):
+        """Unbinds the mouse wheel event."""
+        self.unbind_all("<MouseWheel>")
 
     def _on_canvas_configure(self, event):
         canvas_width = event.width
@@ -192,7 +348,6 @@ class AudioApp(tk.Tk):
         return True, ""
 
     def reload_ini_ui(self):
-        # 1. Clear all dynamic containers
         for container_name in ['scrollable_frame', 'vision_ini_container', 
                                'neurosync_api_scrollable_frame', 'neurosync_main_scrollable_frame']:
             container = getattr(self, container_name, None)
@@ -201,14 +356,12 @@ class AudioApp(tk.Tk):
                     widget.destroy()
         self.ini_entries.clear()
 
-        # 2. Read the INI file
         success, error_message = self._read_ini_safely()
         if not success:
             if hasattr(self, 'scrollable_frame'):
                 ttk.Label(self.scrollable_frame, text=f"Error reading INI file: {error_message}").pack()
             return
 
-        # 3. Define a simple map of specific sections to their UI containers
         section_container_map = {
             'VisionService': self.vision_ini_container,
             'NeurosyncLocalAPI': self.neurosync_api_scrollable_frame,
@@ -216,16 +369,13 @@ class AudioApp(tk.Tk):
             'Watcher': self.neurosync_main_scrollable_frame,
             'LiveLink': self.neurosync_main_scrollable_frame,
         }
-        # Any section NOT in the map will go to the default container (self.scrollable_frame)
         default_container = self.scrollable_frame
-        manual_sections = {'Audio'} # Sections with custom UI that are not drawn dynamically
+        manual_sections = {'Audio'} 
 
-        # 4. Loop through sections and build the UI
         for section in self.config.sections():
             if section in manual_sections:
                 continue
 
-            # Determine the parent container
             parent_container = section_container_map.get(section, default_container)
             
             if not parent_container:
@@ -236,8 +386,7 @@ class AudioApp(tk.Tk):
             section_frame = ttk.LabelFrame(parent_container, text=section, padding=10)
 
             for key in self.config.options(section):
-                # Skip keys with dedicated UI elements
-                if (section == 'VisionService' and key == 'camera_index'):
+                if (section == 'VisionService' and key in ('camera_index', 'smol_vlm_model_id')):
                     continue
                 
                 value = self.config.get(section, key)
@@ -259,11 +408,9 @@ class AudioApp(tk.Tk):
                     widget.pack(side="left", fill="x", expand=True)
                     self.ini_entries[section][key] = widget
             
-            # Pack the populated frame into its parent
             if section_frame.winfo_children():
                 section_frame.pack(fill="x", expand=False, padx=5, pady=5)
         
-        # 5. Populate dedicated UI fields
         try:
             if self.config.has_section('Audio'):
                 self.selected_input_device_var.set(self.config.get('Audio', 'selected_input', fallback='None'))
@@ -273,6 +420,11 @@ class AudioApp(tk.Tk):
                 self.saved_camera_device_var.set(saved_index)
                 if saved_index in self.camera_combobox['values']:
                     self.camera_combobox.set(saved_index)
+                
+                vlm_model_id = self.config.get('VisionService', 'smol_vlm_model_id', fallback='HuggingFaceTB/SmolVLM-500M-Instruct')
+                if hasattr(self, 'smol_vlm_entry'):
+                    self.smol_vlm_entry.delete(0, tk.END)
+                    self.smol_vlm_entry.insert(0, vlm_model_id)
         except Exception as e: 
             print(f"Error loading dedicated settings: {e}")
 
@@ -288,9 +440,16 @@ class AudioApp(tk.Tk):
             'selected_input': self.selected_input_device_var.get(),
             'selected_output': self.selected_output_device_var.get()
         }
+        
+        if 'VisionService' not in settings_to_update: 
+            settings_to_update['VisionService'] = {}
+        
         selected_cam_idx = self.camera_combobox.get()
-        if 'VisionService' not in settings_to_update: settings_to_update['VisionService'] = {}
         settings_to_update['VisionService']['camera_index'] = selected_cam_idx if selected_cam_idx else "None"
+
+        if hasattr(self, 'smol_vlm_entry'):
+            settings_to_update['VisionService']['smol_vlm_model_id'] = self.smol_vlm_entry.get()
+
         try:
             with open(INI_FILE_PATH, 'r', encoding='utf-8') as f: lines = f.readlines()
         except FileNotFoundError: lines = []
@@ -419,19 +578,16 @@ class AudioApp(tk.Tk):
         print("Destroying UI and exiting.")
         self.destroy()
 
-    # --- MODIFIED SECTION ---
     def populate_device_lists(self):
         try:
             devices = sd.query_devices()
             
-            # Clear the lists before populating to avoid duplicates
             self.input_listbox.delete(0, tk.END)
             self.output_listbox.delete(0, tk.END)
 
             for i, d in enumerate(devices):
                 device_name = d['name']
                 
-                # Show all devices EXCEPT those ending with "Voic"
                 if not device_name.strip().endswith("Voic"):
                     if d['max_input_channels'] > 0:
                         self.input_listbox.insert(tk.END, f"[{i}] {device_name}")
@@ -557,14 +713,15 @@ class AudioApp(tk.Tk):
 
 if __name__ == "__main__":
     if not os.path.exists(INI_FILE_PATH):
-        with open(INI_FILE_PATH, "w") as f:
+        with open(INI_FILE_PATH, "w", encoding='utf-8') as f:
             f.write("[General]\n"
                     "setting1 = value1\n\n"
                     "[Audio]\n"
                     "selected_input = None\n"
                     "selected_output = None\n\n"
                     "[VisionService]\n"
-                    "camera_index = None\n\n"
+                    "camera_index = None\n"
+                    "smol_vlm_model_id = HuggingFaceTB/SmolVLM-500M-Instruct\n\n"
                     "[Watcher]\n"
                     "# This must be the full, absolute path to the audio file created by your Flask server.\n"
                     "# Use forward slashes (/) or double backslashes (\\\\) for the path.\n"
