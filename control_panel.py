@@ -394,6 +394,11 @@ class AudioApp(tk.Tk):
                 label = ttk.Label(row_frame, text=f"{key}:", width=20); label.pack(side="left", anchor="n", pady=2)
                 
                 widget = None
+                # --- MODIFICATION START ---
+                # Check if the key name suggests it's a secret value
+                secret_keywords = ['api_key', 'secret', 'session_id', 'rapidapi_key']
+                is_secret_field = any(keyword in key.lower() for keyword in secret_keywords)
+
                 if section == DROPDOWN_SECTION and key == DROPDOWN_KEY:
                     widget = ttk.Combobox(row_frame, values=DROPDOWN_OPTIONS, state="readonly")
                     if value in DROPDOWN_OPTIONS: widget.set(value)
@@ -403,6 +408,17 @@ class AudioApp(tk.Tk):
                 else:
                     widget = ttk.Entry(row_frame)
                     widget.insert(0, value)
+                    # If it's a secret field, hide the text and add a "Show" button
+                    if is_secret_field:
+                        widget.config(show="*")
+                        show_var = tk.BooleanVar(value=False)
+                        
+                        # This command toggles the 'show' option of the widget
+                        toggle_command = lambda w=widget, v=show_var: w.config(show="" if v.get() else "*")
+                        
+                        show_hide_btn = ttk.Checkbutton(row_frame, text="Show", variable=show_var, command=toggle_command)
+                        show_hide_btn.pack(side="right", padx=(5, 0))
+                # --- MODIFICATION END ---
                 
                 if widget:
                     widget.pack(side="left", fill="x", expand=True)
@@ -540,7 +556,7 @@ class AudioApp(tk.Tk):
             if not ret:
                 time.sleep(0.1)
                 continue
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb_frame = cv2.cvtColor(frame, cv.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb_frame)
             try:
                 self.video_frame_queue.put_nowait(pil_img)
@@ -716,6 +732,10 @@ if __name__ == "__main__":
         with open(INI_FILE_PATH, "w", encoding='utf-8') as f:
             f.write("[General]\n"
                     "setting1 = value1\n\n"
+                    "[SomeService]\n"
+                    "# These keys will be hidden automatically by the UI\n"
+                    "my_secret_session_id = some_secret_value_12345\n"
+                    "my_rapidapi_key = another_secret_value_67890\n\n"
                     "[Audio]\n"
                     "selected_input = None\n"
                     "selected_output = None\n\n"
@@ -738,7 +758,9 @@ if __name__ == "__main__":
                     "ip = 192.168.1.101\n"
                     "port = 11111\n\n"
                     f"[{DROPDOWN_SECTION}]\n"
-                    f"{DROPDOWN_KEY} = gemini\n")
+                    f"{DROPDOWN_KEY} = gemini\n"
+                    "# This api_key will also be hidden\n"
+                    "gemini_api_key = YOUR_API_KEY_GOES_HERE\n")
             
     app = AudioApp()
     app.mainloop()
