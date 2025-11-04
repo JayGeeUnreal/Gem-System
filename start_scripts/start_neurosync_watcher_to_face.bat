@@ -1,3 +1,4 @@
+TITLE "Neurosync Watcher To Face"
 cd C:\Users\jorge\Documents\AI\Gem-System\Neurosync\NeuroSync_Player
 call C:\Users\jorge\miniconda30\Scripts\activate.bat
 call conda activate mcp_env_1
