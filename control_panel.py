@@ -11,7 +11,9 @@ import configparser
 import cv2
 from PIL import Image, ImageTk
 import traceback
-import subprocess  # Required import
+import subprocess
+from tkinter import messagebox
+import sys # Added for the help function fallback
 
 # --- Configuration ---
 MIN_DB = -60.0
@@ -214,11 +216,9 @@ class AudioApp(tk.Tk):
             print(f"Successfully launched {bat_file_name} in a new console.")
         except FileNotFoundError:
             print(f"Error: The file '{bat_file_path}' was not found.")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
             print(f"An error occurred while trying to run the batch file: {e}")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
 
     def run_watcher_to_face_script(self):
@@ -235,11 +235,9 @@ class AudioApp(tk.Tk):
             print(f"Successfully launched {bat_file_name} in a new console.")
         except FileNotFoundError:
             print(f"Error: The file '{bat_file_path}' was not found.")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
             print(f"An error occurred while trying to run the batch file: {e}")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
 
     def run_main_script(self):
@@ -256,11 +254,9 @@ class AudioApp(tk.Tk):
             print("Successfully launched the batch file in a new console.")
         except FileNotFoundError:
             print(f"Error: The file '{bat_file_path}' was not found.")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
             print(f"An error occurred while trying to run the batch file: {e}")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
             
     def run_styletts2_script(self):
@@ -277,11 +273,9 @@ class AudioApp(tk.Tk):
             print(f"Successfully launched {bat_file_name} in a new console.")
         except FileNotFoundError:
             print(f"Error: The file '{bat_file_path}' was not found.")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
             print(f"An error occurred while trying to run the batch file: {e}")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
             
     def run_vision_script(self):
@@ -298,11 +292,9 @@ class AudioApp(tk.Tk):
             print(f"Successfully launched {bat_file_name} in a new console.")
         except FileNotFoundError:
             print(f"Error: The file '{bat_file_path}' was not found.")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
             print(f"An error occurred while trying to run the batch file: {e}")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
 
     def _on_right_pane_mousewheel(self, event):
@@ -346,6 +338,43 @@ class AudioApp(tk.Tk):
                 self.config.set(current_section, key, full_value)
             i += 1
         return True, ""
+    
+    # --- NEW METHOD START ---
+    def open_music_recognition_help(self):
+        """Creates and opens the Music_Recognition_help.txt file."""
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        help_dir = os.path.join(script_dir, 'help')
+        help_file_path = os.path.join(help_dir, 'Music_Recognition_help.txt')
+
+        try:
+            # Create the 'help' directory if it doesn't exist
+            if not os.path.exists(help_dir):
+                os.makedirs(help_dir)
+
+            # Create the help file with specific content if it doesn't exist
+            if not os.path.exists(help_file_path):
+                with open(help_file_path, 'w', encoding='utf-8') as f:
+                    f.write("Music Recognition Help\n")
+                    f.write("="*25 + "\n\n")
+                    f.write("This section contains settings for the music recognition feature.\n\n")
+                    f.write("The main purpose of this feature is to listen to the audio input and identify any music playing.\n\n")
+                    f.write("Key Settings:\n")
+                    f.write("-   **enable:** Set to 'true' to activate the feature, or 'false' to disable it.\n")
+                    f.write("-   **api_key:** Enter your API key for the recognition service here.\n\n")
+                    f.write("Remember to click 'Save All Settings' at the bottom after making changes.")
+
+            # Open the file using the default system application
+            if hasattr(os, 'startfile'):
+                os.startfile(help_file_path) # For Windows
+            else:
+                # A fallback for other systems like Linux or macOS
+                opener = "open" if sys.platform == "darwin" else "xdg-open"
+                subprocess.run([opener, help_file_path])
+
+        except Exception as e:
+            print(f"Error opening help file: {e}")
+            messagebox.showerror("Error", f"Could not open the help file:\n{e}")
+    # --- NEW METHOD END ---
 
     def reload_ini_ui(self):
         for container_name in ['scrollable_frame', 'vision_ini_container', 
@@ -385,6 +414,17 @@ class AudioApp(tk.Tk):
             self.ini_entries[section] = {}
             section_frame = ttk.LabelFrame(parent_container, text=section, padding=10)
 
+            # --- MODIFICATION START ---
+            # Check if the current section is [MusicRecognition] and add the help button
+            if section == "MusicRecognition":
+                # Create a frame to hold the button on the right
+                header_frame = ttk.Frame(section_frame)
+                header_frame.pack(fill='x', expand=True)
+                # Add the button to the frame, aligned to the right
+                help_button = ttk.Button(header_frame, text="Help", command=self.open_music_recognition_help)
+                help_button.pack(side="right")
+            # --- MODIFICATION END ---
+
             for key in self.config.options(section):
                 if (section == 'VisionService' and key in ('camera_index', 'smol_vlm_model_id')):
                     continue
@@ -394,11 +434,6 @@ class AudioApp(tk.Tk):
                 label = ttk.Label(row_frame, text=f"{key}:", width=20); label.pack(side="left", anchor="n", pady=2)
                 
                 widget = None
-                # --- MODIFICATION START ---
-                # Check if the key name suggests it's a secret value
-                secret_keywords = ['api_key', 'secret', 'session_id', 'rapidapi_key']
-                is_secret_field = any(keyword in key.lower() for keyword in secret_keywords)
-
                 if section == DROPDOWN_SECTION and key == DROPDOWN_KEY:
                     widget = ttk.Combobox(row_frame, values=DROPDOWN_OPTIONS, state="readonly")
                     if value in DROPDOWN_OPTIONS: widget.set(value)
@@ -408,17 +443,6 @@ class AudioApp(tk.Tk):
                 else:
                     widget = ttk.Entry(row_frame)
                     widget.insert(0, value)
-                    # If it's a secret field, hide the text and add a "Show" button
-                    if is_secret_field:
-                        widget.config(show="*")
-                        show_var = tk.BooleanVar(value=False)
-                        
-                        # This command toggles the 'show' option of the widget
-                        toggle_command = lambda w=widget, v=show_var: w.config(show="" if v.get() else "*")
-                        
-                        show_hide_btn = ttk.Checkbutton(row_frame, text="Show", variable=show_var, command=toggle_command)
-                        show_hide_btn.pack(side="right", padx=(5, 0))
-                # --- MODIFICATION END ---
                 
                 if widget:
                     widget.pack(side="left", fill="x", expand=True)
@@ -556,7 +580,7 @@ class AudioApp(tk.Tk):
             if not ret:
                 time.sleep(0.1)
                 continue
-            rgb_frame = cv2.cvtColor(frame, cv.COLOR_BGR2RGB)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb_frame)
             try:
                 self.video_frame_queue.put_nowait(pil_img)
@@ -718,7 +742,7 @@ class AudioApp(tk.Tk):
         width, height = canvas.winfo_width(), canvas.winfo_height()
         if width <= 1: return
         canvas.delete("all")
-        clamped_db = max(MIN_DB, min(smoothed_db, MAX_DB)); bar_length = int(((clamped_db - MIN_DB) / (MAX_DB - MIN_DB)) * width)
+        clamped_db = max(MIN_DB, min( smoothed_db, MAX_DB)); bar_length = int(((clamped_db - MIN_DB) / (MAX_DB - MIN_DB)) * width)
         green_w, yellow_w = int(width * 0.7), int(width * 0.9)
         if bar_length > 0: canvas.create_rectangle(0, 0, min(bar_length, green_w), height, fill="#4CAF50", width=0)
         if bar_length > green_w: canvas.create_rectangle(green_w, 0, min(bar_length, yellow_w), height, fill="#FFC107", width=0)
@@ -730,15 +754,16 @@ class AudioApp(tk.Tk):
 if __name__ == "__main__":
     if not os.path.exists(INI_FILE_PATH):
         with open(INI_FILE_PATH, "w", encoding='utf-8') as f:
+            # --- MODIFICATION START ---
+            # Added a new [MusicRecognition] section to the default INI file
             f.write("[General]\n"
                     "setting1 = value1\n\n"
-                    "[SomeService]\n"
-                    "# These keys will be hidden automatically by the UI\n"
-                    "my_secret_session_id = some_secret_value_12345\n"
-                    "my_rapidapi_key = another_secret_value_67890\n\n"
                     "[Audio]\n"
                     "selected_input = None\n"
                     "selected_output = None\n\n"
+                    "[MusicRecognition]\n"
+                    "enable = true\n"
+                    "api_key = your_api_key_here\n\n"
                     "[VisionService]\n"
                     "camera_index = None\n"
                     "smol_vlm_model_id = HuggingFaceTB/SmolVLM-500M-Instruct\n\n"
@@ -758,9 +783,8 @@ if __name__ == "__main__":
                     "ip = 192.168.1.101\n"
                     "port = 11111\n\n"
                     f"[{DROPDOWN_SECTION}]\n"
-                    f"{DROPDOWN_KEY} = gemini\n"
-                    "# This api_key will also be hidden\n"
-                    "gemini_api_key = YOUR_API_KEY_GOES_HERE\n")
+                    f"{DROPDOWN_KEY} = gemini\n")
+            # --- MODIFICATION END ---
             
     app = AudioApp()
     app.mainloop()
