@@ -13,7 +13,7 @@ from PIL import Image, ImageTk
 import traceback
 import subprocess
 from tkinter import messagebox
-import sys # Added for the help function fallback
+import sys
 
 # --- Configuration ---
 MIN_DB = -60.0
@@ -26,16 +26,21 @@ DROPDOWN_SECTION = "MCP"
 DROPDOWN_KEY = "llm_choice"
 DROPDOWN_OPTIONS = ["gemini", "ollama", "ollama_vision", "minitron"]
 
+# --- NEW: List of sensitive keys to hide by default ---
+SENSITIVE_KEYS = ["api_key", "session_id"] 
+
 class AudioApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Master Control Panel")
         
-        # --- Change the window size here ---
         self.geometry("1400x880") 
         
         self.config = configparser.ConfigParser(interpolation=None)
         self.ini_entries = {}
+        # --- NEW: Dictionary to store the actual values of sensitive fields ---
+        self.sensitive_values = {}
+
         self.input_audio_queue = queue.Queue()
         self.output_audio_queue = queue.Queue()
         self.video_frame_queue = queue.Queue()
@@ -52,7 +57,6 @@ class AudioApp(tk.Tk):
         self.vision_thread = None
         self.stop_vision_thread = False
 
-        # --- UI Setup ---
         self.create_widgets()
         self.populate_device_lists()
         self.populate_camera_list()
@@ -92,7 +96,6 @@ class AudioApp(tk.Tk):
         self.setup_neurosync_widgets(neurosync_tab)
 
     def setup_neurosync_widgets(self, parent_frame):
-        # Helper function to create a scrollable frame
         def create_scrollable_frame(parent, text_label):
             ini_frame = ttk.LabelFrame(parent, text=text_label)
             ini_frame.pack(fill="both", expand=True, padx=5, pady=5)
@@ -164,7 +167,6 @@ class AudioApp(tk.Tk):
         ini_frame = ttk.LabelFrame(parent_frame, text="mcp_settings.ini (General)")
         ini_frame.pack(fill="both", expand=True)
         
-        # Bind mouse events for scrolling
         ini_frame.bind('<Enter>', self._bind_mousewheel_for_right_pane)
         ini_frame.bind('<Leave>', self._unbind_mousewheel_for_right_pane)
         
@@ -203,113 +205,65 @@ class AudioApp(tk.Tk):
         reload_button.pack(side="left", expand=True, fill="x", padx=5)
 
     def run_neurosync_api_script(self):
-        """Runs the neurosync local API .bat file in a new process."""
         subfolder_name = "start_scripts"
         bat_file_name = "start_neurosync_localapi.bat" 
-        
         script_dir = os.path.dirname(os.path.abspath(__file__))
         bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
-        
-        print(f"Attempting to run: {bat_file_path}")
         try:
             subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            print(f"Successfully launched {bat_file_name} in a new console.")
-        except FileNotFoundError:
-            print(f"Error: The file '{bat_file_path}' was not found.")
-            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
-            print(f"An error occurred while trying to run the batch file: {e}")
-            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+            messagebox.showerror("Error", f"Could not launch the script:\n{e}")
 
     def run_watcher_to_face_script(self):
-        """Runs the neurosync watcher to face .bat file in a new process."""
         subfolder_name = "start_scripts"
         bat_file_name = "start_neurosync_watcher_to_face.bat" 
-        
         script_dir = os.path.dirname(os.path.abspath(__file__))
         bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
-        
-        print(f"Attempting to run: {bat_file_path}")
         try:
             subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            print(f"Successfully launched {bat_file_name} in a new console.")
-        except FileNotFoundError:
-            print(f"Error: The file '{bat_file_path}' was not found.")
-            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
-            print(f"An error occurred while trying to run the batch file: {e}")
-            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+            messagebox.showerror("Error", f"Could not launch the script:\n{e}")
 
     def run_main_script(self):
-        """Runs the MCP .bat file from a specific subfolder in a new process."""
         subfolder_name = "start_scripts"
         bat_file_name = "start_mcp.bat" 
-        
         script_dir = os.path.dirname(os.path.abspath(__file__))
         bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
-        
-        print(f"Attempting to run: {bat_file_path}")
         try:
             subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            print("Successfully launched the batch file in a new console.")
-        except FileNotFoundError:
-            print(f"Error: The file '{bat_file_path}' was not found.")
-            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
-            print(f"An error occurred while trying to run the batch file: {e}")
-            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+            messagebox.showerror("Error", f"Could not launch the script:\n{e}")
             
     def run_styletts2_script(self):
-        """Runs the Start_StyleTTS2.bat file in a new process."""
         subfolder_name = "start_scripts"
         bat_file_name = "Start_StyleTTS2.bat" 
-        
         script_dir = os.path.dirname(os.path.abspath(__file__))
         bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
-        
-        print(f"Attempting to run: {bat_file_path}")
         try:
             subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            print(f"Successfully launched {bat_file_name} in a new console.")
-        except FileNotFoundError:
-            print(f"Error: The file '{bat_file_path}' was not found.")
-            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
-            print(f"An error occurred while trying to run the batch file: {e}")
-            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+            messagebox.showerror("Error", f"Could not launch the script:\n{e}")
             
     def run_vision_script(self):
-        """Runs the start_vision.bat file in a new process."""
         subfolder_name = "start_scripts"
         bat_file_name = "start_vision.bat" 
-        
         script_dir = os.path.dirname(os.path.abspath(__file__))
         bat_file_path = os.path.join(script_dir, subfolder_name, bat_file_name)
-        
-        print(f"Attempting to run: {bat_file_path}")
         try:
             subprocess.Popen(bat_file_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            print(f"Successfully launched {bat_file_name} in a new console.")
-        except FileNotFoundError:
-            print(f"Error: The file '{bat_file_path}' was not found.")
-            messagebox.showerror("Error", f"Could not find the batch file:\n{bat_file_path}")
         except Exception as e:
-            print(f"An error occurred while trying to run the batch file: {e}")
-            messagebox.showerror("Error", f"An error occurred while launching the script:\n{e}")
+            messagebox.showerror("Error", f"Could not launch the script:\n{e}")
 
     def _on_right_pane_mousewheel(self, event):
-        """Handles the mouse wheel scroll event for the right settings pane."""
         if event.num == 5 or event.delta < 0:
             self.ini_canvas.yview_scroll(1, "units")
         if event.num == 4 or event.delta > 0:
             self.ini_canvas.yview_scroll(-1, "units")
 
     def _bind_mousewheel_for_right_pane(self, event):
-        """Binds the mouse wheel event to the scroll function."""
         self.bind_all("<MouseWheel>", self._on_right_pane_mousewheel)
 
     def _unbind_mousewheel_for_right_pane(self, event):
-        """Unbinds the mouse wheel event."""
         self.unbind_all("<MouseWheel>")
 
     def _on_canvas_configure(self, event):
@@ -339,51 +293,58 @@ class AudioApp(tk.Tk):
             i += 1
         return True, ""
     
-    # --- NEW METHOD START ---
     def open_music_recognition_help(self):
-        """Creates and opens the Music_Recognition_help.txt file."""
         script_dir = os.path.dirname(os.path.abspath(__file__))
         help_dir = os.path.join(script_dir, 'help')
         help_file_path = os.path.join(help_dir, 'Music_Recognition_help.txt')
-
         try:
-            # Create the 'help' directory if it doesn't exist
             if not os.path.exists(help_dir):
                 os.makedirs(help_dir)
-
-            # Create the help file with specific content if it doesn't exist
             if not os.path.exists(help_file_path):
                 with open(help_file_path, 'w', encoding='utf-8') as f:
-                    f.write("Music Recognition Help\n")
-                    f.write("="*25 + "\n\n")
-                    f.write("This section contains settings for the music recognition feature.\n\n")
-                    f.write("The main purpose of this feature is to listen to the audio input and identify any music playing.\n\n")
-                    f.write("Key Settings:\n")
-                    f.write("-   **enable:** Set to 'true' to activate the feature, or 'false' to disable it.\n")
-                    f.write("-   **api_key:** Enter your API key for the recognition service here.\n\n")
-                    f.write("Remember to click 'Save All Settings' at the bottom after making changes.")
-
-            # Open the file using the default system application
+                    f.write("Music Recognition Help\n" + "="*25 + "\n\n" +
+                            "This section contains settings for the music recognition feature.\n\n" +
+                            "Key Settings:\n" +
+                            "-   **enable:** Set to 'true' to activate the feature.\n" +
+                            "-   **api_key:** Enter your API key for the recognition service here.\n\n" +
+                            "Remember to click 'Save All Settings' after making changes.")
             if hasattr(os, 'startfile'):
-                os.startfile(help_file_path) # For Windows
+                os.startfile(help_file_path)
             else:
-                # A fallback for other systems like Linux or macOS
                 opener = "open" if sys.platform == "darwin" else "xdg-open"
                 subprocess.run([opener, help_file_path])
-
         except Exception as e:
-            print(f"Error opening help file: {e}")
             messagebox.showerror("Error", f"Could not open the help file:\n{e}")
-    # --- NEW METHOD END ---
+
+    # --- NEW: Function to toggle visibility of sensitive fields ---
+    def toggle_sensitive_field(self, entry_widget, button_widget):
+        if button_widget.cget("text") == "Show":
+            # --- SHOW THE VALUE ---
+            # Retrieve the real value from storage
+            real_value = self.sensitive_values.get(entry_widget, "")
+            # Configure entry to show text, then update its content
+            entry_widget.config(show="")
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, real_value)
+            # Update button text
+            button_widget.config(text="Hide")
+        else:
+            # --- HIDE THE VALUE ---
+            # First, save the current value from the entry in case it was edited
+            self.sensitive_values[entry_widget] = entry_widget.get()
+            # Configure entry to hide text, then re-insert value to get correct '*' count
+            entry_widget.config(show="*")
+            # Update button text
+            button_widget.config(text="Show")
 
     def reload_ini_ui(self):
-        for container_name in ['scrollable_frame', 'vision_ini_container', 
-                               'neurosync_api_scrollable_frame', 'neurosync_main_scrollable_frame']:
-            container = getattr(self, container_name, None)
+        for container in [self.scrollable_frame, self.vision_ini_container, self.neurosync_api_scrollable_frame, self.neurosync_main_scrollable_frame]:
             if container:
                 for widget in container.winfo_children():
                     widget.destroy()
         self.ini_entries.clear()
+        # --- NEW: Clear sensitive values on reload ---
+        self.sensitive_values.clear()
 
         success, error_message = self._read_ini_safely()
         if not success:
@@ -391,61 +352,65 @@ class AudioApp(tk.Tk):
                 ttk.Label(self.scrollable_frame, text=f"Error reading INI file: {error_message}").pack()
             return
 
-        section_container_map = {
-            'VisionService': self.vision_ini_container,
-            'NeurosyncLocalAPI': self.neurosync_api_scrollable_frame,
-            'Neurosync': self.neurosync_main_scrollable_frame,
-            'Watcher': self.neurosync_main_scrollable_frame,
-            'LiveLink': self.neurosync_main_scrollable_frame,
-        }
+        section_container_map = { 'VisionService': self.vision_ini_container, 'NeurosyncLocalAPI': self.neurosync_api_scrollable_frame, 'Neurosync': self.neurosync_main_scrollable_frame, 'Watcher': self.neurosync_main_scrollable_frame, 'LiveLink': self.neurosync_main_scrollable_frame, }
         default_container = self.scrollable_frame
-        manual_sections = {'Audio'} 
-
+        
         for section in self.config.sections():
-            if section in manual_sections:
-                continue
-
+            if section == 'Audio': continue
             parent_container = section_container_map.get(section, default_container)
-            
-            if not parent_container:
-                print(f"Warning: Could not find a valid container for section '{section}'. Skipping.")
-                continue
+            if not parent_container: continue
 
             self.ini_entries[section] = {}
             section_frame = ttk.LabelFrame(parent_container, text=section, padding=10)
 
-            # --- MODIFICATION START ---
-            # Check if the current section is [MusicRecognition] and add the help button
             if section == "MusicRecognition":
-                # Create a frame to hold the button on the right
                 header_frame = ttk.Frame(section_frame)
                 header_frame.pack(fill='x', expand=True)
-                # Add the button to the frame, aligned to the right
                 help_button = ttk.Button(header_frame, text="Help", command=self.open_music_recognition_help)
                 help_button.pack(side="right")
-            # --- MODIFICATION END ---
 
             for key in self.config.options(section):
-                if (section == 'VisionService' and key in ('camera_index', 'smol_vlm_model_id')):
-                    continue
+                if section == 'VisionService' and key in ('camera_index', 'smol_vlm_model_id'): continue
                 
                 value = self.config.get(section, key)
                 row_frame = ttk.Frame(section_frame); row_frame.pack(fill="x", pady=2, padx=2)
                 label = ttk.Label(row_frame, text=f"{key}:", width=20); label.pack(side="left", anchor="n", pady=2)
                 
                 widget = None
-                if section == DROPDOWN_SECTION and key == DROPDOWN_KEY:
+                # --- MODIFICATION START: Handle sensitive keys differently ---
+                if key in SENSITIVE_KEYS:
+                    # Create a sub-frame for the entry and its button
+                    widget_frame = ttk.Frame(row_frame)
+                    widget_frame.pack(side="left", fill="x", expand=True)
+
+                    # Create the entry widget, hidden by default
+                    widget = ttk.Entry(widget_frame, show="*")
+                    widget.insert(0, value)
+                    widget.pack(side="left", fill="x", expand=True)
+                    
+                    # Store the actual value separately
+                    self.sensitive_values[widget] = value
+
+                    # Create the Show/Hide button
+                    toggle_button = ttk.Button(widget_frame, text="Show", width=5)
+                    # Use a lambda to pass the specific widgets to the toggle function
+                    toggle_button.config(command=lambda w=widget, b=toggle_button: self.toggle_sensitive_field(w, b))
+                    toggle_button.pack(side="left", padx=(5,0))
+                # --- MODIFICATION END: Regular widget creation below ---
+                elif section == DROPDOWN_SECTION and key == DROPDOWN_KEY:
                     widget = ttk.Combobox(row_frame, values=DROPDOWN_OPTIONS, state="readonly")
                     if value in DROPDOWN_OPTIONS: widget.set(value)
+                    widget.pack(side="left", fill="x", expand=True)
                 elif '\n' in value:
                     widget = tk.Text(row_frame, height=8, wrap="word")
                     widget.insert("1.0", value)
+                    widget.pack(side="left", fill="x", expand=True)
                 else:
                     widget = ttk.Entry(row_frame)
                     widget.insert(0, value)
+                    widget.pack(side="left", fill="x", expand=True)
                 
                 if widget:
-                    widget.pack(side="left", fill="x", expand=True)
                     self.ini_entries[section][key] = widget
             
             if section_frame.winfo_children():
@@ -458,9 +423,7 @@ class AudioApp(tk.Tk):
             if self.config.has_section('VisionService'):
                 saved_index = self.config.get('VisionService', 'camera_index', fallback='None')
                 self.saved_camera_device_var.set(saved_index)
-                if saved_index in self.camera_combobox['values']:
-                    self.camera_combobox.set(saved_index)
-                
+                if saved_index in self.camera_combobox['values']: self.camera_combobox.set(saved_index)
                 vlm_model_id = self.config.get('VisionService', 'smol_vlm_model_id', fallback='HuggingFaceTB/SmolVLM-500M-Instruct')
                 if hasattr(self, 'smol_vlm_entry'):
                     self.smol_vlm_entry.delete(0, tk.END)
@@ -468,25 +431,29 @@ class AudioApp(tk.Tk):
         except Exception as e: 
             print(f"Error loading dedicated settings: {e}")
 
-
     def save_ini_file(self):
         settings_to_update = {}
         for section, keys in self.ini_entries.items():
             settings_to_update[section] = {}
             for key, widget in keys.items():
-                value = widget.get("1.0", tk.END).strip() if isinstance(widget, tk.Text) else widget.get()
+                value = ""
+                # --- MODIFICATION START: Ensure real value is saved for sensitive fields ---
+                if widget in self.sensitive_values:
+                    # If the field is currently visible, the user might have edited it.
+                    # Grab the current text from the widget and update our storage.
+                    if widget.cget("show") == "":
+                        self.sensitive_values[widget] = widget.get()
+                    # Always get the value from our secure storage, not the widget itself
+                    value = self.sensitive_values[widget]
+                # --- MODIFICATION END: Regular save logic below ---
+                else:
+                    value = widget.get("1.0", tk.END).strip() if isinstance(widget, tk.Text) else widget.get()
+                
                 settings_to_update[section][key] = value
-        settings_to_update['Audio'] = {
-            'selected_input': self.selected_input_device_var.get(),
-            'selected_output': self.selected_output_device_var.get()
-        }
-        
-        if 'VisionService' not in settings_to_update: 
-            settings_to_update['VisionService'] = {}
-        
-        selected_cam_idx = self.camera_combobox.get()
-        settings_to_update['VisionService']['camera_index'] = selected_cam_idx if selected_cam_idx else "None"
 
+        settings_to_update['Audio'] = { 'selected_input': self.selected_input_device_var.get(), 'selected_output': self.selected_output_device_var.get() }
+        if 'VisionService' not in settings_to_update: settings_to_update['VisionService'] = {}
+        settings_to_update['VisionService']['camera_index'] = self.camera_combobox.get() if self.camera_combobox.get() else "None"
         if hasattr(self, 'smol_vlm_entry'):
             settings_to_update['VisionService']['smol_vlm_model_id'] = self.smol_vlm_entry.get()
 
@@ -528,64 +495,45 @@ class AudioApp(tk.Tk):
                         indented_rest = '\n'.join(['  ' + l.strip() for l in rest.split('\n')])
                         value = first_line + '\n' + indented_rest
                     new_lines.append(f"{key} = {value}\n")
-        try:
-            with open(INI_FILE_PATH, 'w', encoding='utf-8') as f: f.writelines(new_lines)
-            print("Settings successfully saved, preserving comments and format!")
-            self.reload_ini_ui()
-        except Exception as e: print(f"Error writing to file: {e}")
+        with open(INI_FILE_PATH, 'w', encoding='utf-8') as f: f.writelines(new_lines)
+        print("Settings successfully saved!")
+        self.reload_ini_ui()
 
     def populate_camera_list(self):
         available_cameras = []
-        backend_to_use = cv2.CAP_DSHOW
-        try:
-            for i in range(10):
-                cap = cv2.VideoCapture(i, backend_to_use)
-                if cap is not None and cap.isOpened():
-                    available_cameras.append(str(i))
-                    cap.release()
-        except Exception:
-            print("="*60)
-            print("A CRITICAL ERROR occurred while initializing the camera with DSHOW.")
-            traceback.print_exc()
-            print("="*60)
+        for i in range(10):
+            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+            if cap is not None and cap.isOpened():
+                available_cameras.append(str(i))
+                cap.release()
         self.camera_combobox['values'] = available_cameras
-        if available_cameras:
-            print(f"Found DSHOW cameras: {available_cameras}")
-        else:
-            print("No cameras could be opened with the DSHOW backend.")
+        if not available_cameras:
+            print("No cameras found with DSHOW backend.")
 
     def start_camera_preview(self):
-        if self.vision_thread is not None and self.vision_thread.is_alive(): return
+        if self.vision_thread and self.vision_thread.is_alive(): return
         cam_index_str = self.camera_combobox.get()
         if not cam_index_str: return
-        cam_index = int(cam_index_str)
         self.stop_vision_thread = False
-        self.vision_thread = threading.Thread(target=self._video_capture_loop, args=(cam_index,), daemon=True)
+        self.vision_thread = threading.Thread(target=self._video_capture_loop, args=(int(cam_index_str),), daemon=True)
         self.vision_thread.start()
 
     def stop_camera_preview(self):
-        if self.vision_thread is not None and self.vision_thread.is_alive():
-            self.stop_vision_thread = True
-        self.video_label.config(image='', text="Preview stopped", fg="white")
+        self.stop_vision_thread = True
+        self.video_label.config(image='', text="Preview stopped")
         self.video_label.image = None
 
     def _video_capture_loop(self, camera_index):
         cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
         if not cap.isOpened():
-            print(f"Error: Could not open camera index {camera_index} with DSHOW.")
             self.video_frame_queue.put(f"Failed to open camera {camera_index}")
             return
         while not self.stop_vision_thread:
             ret, frame = cap.read()
-            if not ret:
-                time.sleep(0.1)
-                continue
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(rgb_frame)
-            try:
-                self.video_frame_queue.put_nowait(pil_img)
-            except queue.Full:
-                pass
+            if not ret: continue
+            pil_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            try: self.video_frame_queue.put_nowait(pil_img)
+            except queue.Full: pass
         cap.release()
 
     def process_video_queue(self):
@@ -594,105 +542,86 @@ class AudioApp(tk.Tk):
             if isinstance(item, str):
                 self.video_label.config(image='', text=item, fg="red")
                 self.video_label.image = None
-                return
-            label_w = self.video_label.winfo_width()
-            label_h = self.video_label.winfo_height()
-            if label_w > 1 and label_h > 1:
-                item.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
-                photo_image = ImageTk.PhotoImage(image=item)
-                self.video_label.config(image=photo_image, text="")
-                self.video_label.image = photo_image
-        except queue.Empty:
-            pass
-        finally:
-            self.after(30, self.process_video_queue)
+            else:
+                label_w, label_h = self.video_label.winfo_width(), self.video_label.winfo_height()
+                if label_w > 1 and label_h > 1:
+                    item.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
+                    photo_image = ImageTk.PhotoImage(image=item)
+                    self.video_label.config(image=photo_image, text="")
+                    self.video_label.image = photo_image
+        except queue.Empty: pass
+        self.after(30, self.process_video_queue)
 
     def on_closing(self):
-        print("Closing application: Signaling threads to stop...")
         self.stop_vision_thread = True
         self.is_testing_output = False
-        if self.input_stream:
-            self.input_stream.close()
-        if self.output_stream:
-            self.output_stream.close()
-        print("Destroying UI and exiting.")
+        if self.input_stream: self.input_stream.close()
+        if self.output_stream: self.output_stream.close()
         self.destroy()
 
     def populate_device_lists(self):
         try:
             devices = sd.query_devices()
-            
             self.input_listbox.delete(0, tk.END)
             self.output_listbox.delete(0, tk.END)
-
             for i, d in enumerate(devices):
-                device_name = d['name']
-                
-                if not device_name.strip().endswith("Voic"):
-                    if d['max_input_channels'] > 0:
-                        self.input_listbox.insert(tk.END, f"[{i}] {device_name}")
-                    if d['max_output_channels'] > 0:
-                        self.output_listbox.insert(tk.END, f"[{i}] {device_name}")
-
-        except Exception as e:
-            print(f"Error querying devices: {e}")
+                if not d['name'].strip().endswith("Voic"):
+                    if d['max_input_channels'] > 0: self.input_listbox.insert(tk.END, f"[{i}] {d['name']}")
+                    if d['max_output_channels'] > 0: self.output_listbox.insert(tk.END, f"[{i}] {d['name']}")
+        except Exception as e: print(f"Error querying devices: {e}")
 
     def setup_input_widgets(self, parent_frame):
         device_frame = ttk.Frame(parent_frame); device_frame.pack(pady=5, fill="x")
-        ttk.Label(device_frame, text="Selected Input Device:").pack(side="left", padx=(0, 10))
+        ttk.Label(device_frame, text="Selected Input Device:").pack(side="left")
         self.selected_input_device_var = tk.StringVar(value="None")
-        ttk.Entry(device_frame, textvariable=self.selected_input_device_var, state="readonly").pack(side="left", fill="x", expand=True)
-        list_frame = ttk.Frame(parent_frame); list_frame.pack(pady=10, fill="both", expand=True)
+        ttk.Entry(device_frame, textvariable=self.selected_input_device_var, state="readonly").pack(side="left", fill="x", expand=True, padx=5)
+        list_frame = ttk.Frame(parent_frame); list_frame.pack(pady=5, fill="both", expand=True)
         ttk.Label(list_frame, text="Mic device list (Double-click to select):").pack(anchor="w")
         self.input_listbox = tk.Listbox(list_frame, exportselection=False); self.input_listbox.pack(side="left", fill="both", expand=True)
         self.input_listbox.bind("<Double-Button-1>", self.on_input_device_select)
-        ttk.Label(parent_frame, text="Input VU Meter:").pack(anchor="w", pady=(10, 0))
-        self.input_vu_meter_canvas = tk.Canvas(parent_frame, height=30, bg="lightgrey", relief="sunken", borderwidth=1); self.input_vu_meter_canvas.pack(pady=5, fill="x")
+        ttk.Label(parent_frame, text="Input VU Meter:").pack(anchor="w", pady=(5, 0))
+        self.input_vu_meter_canvas = tk.Canvas(parent_frame, height=30, bg="lightgrey", relief="sunken"); self.input_vu_meter_canvas.pack(pady=5, fill="x")
 
     def setup_output_widgets(self, parent_frame):
         device_frame = ttk.Frame(parent_frame); device_frame.pack(pady=5, fill="x")
-        ttk.Label(device_frame, text="Selected Output Device:").pack(side="left", padx=(0, 10))
+        ttk.Label(device_frame, text="Selected Output Device:").pack(side="left")
         self.selected_output_device_var = tk.StringVar(value="None")
-        ttk.Entry(device_frame, textvariable=self.selected_output_device_var, state="readonly").pack(side="left", fill="x", expand=True)
-        list_frame = ttk.Frame(parent_frame); list_frame.pack(pady=10, fill="both", expand=True)
+        ttk.Entry(device_frame, textvariable=self.selected_output_device_var, state="readonly").pack(side="left", fill="x", expand=True, padx=5)
+        list_frame = ttk.Frame(parent_frame); list_frame.pack(pady=5, fill="both", expand=True)
         ttk.Label(list_frame, text="Output device list (Double-click to select):").pack(anchor="w")
         self.output_listbox = tk.Listbox(list_frame, exportselection=False); self.output_listbox.pack(side="left", fill="both", expand=True)
         self.output_listbox.bind("<Double-Button-1>", self.on_output_device_select)
-        self.test_output_button = ttk.Button(list_frame, text="Test", command=self.toggle_output_test, width=10); self.test_output_button.pack(side="left", padx=(10, 0), anchor="n")
-        ttk.Label(parent_frame, text="Output Test VU Meter:").pack(anchor="w", pady=(10, 0))
-        self.output_vu_meter_canvas = tk.Canvas(parent_frame, height=30, bg="lightgrey", relief="sunken", borderwidth=1); self.output_vu_meter_canvas.pack(pady=5, fill="x")
+        self.test_output_button = ttk.Button(list_frame, text="Test", command=self.toggle_output_test, width=10); self.test_output_button.pack(side="left", padx=5, anchor="n")
+        ttk.Label(parent_frame, text="Output Test VU Meter:").pack(anchor="w", pady=(5, 0))
+        self.output_vu_meter_canvas = tk.Canvas(parent_frame, height=30, bg="lightgrey", relief="sunken"); self.output_vu_meter_canvas.pack(pady=5, fill="x")
 
     def on_input_device_select(self, event):
-        selection_indices = self.input_listbox.curselection()
-        if not selection_indices: return
-        selected_text = self.input_listbox.get(selection_indices[0])
-        self.selected_input_device_var.set(selected_text)
-        device_id = int(selected_text.split(']')[0][1:])
-        self.start_input_stream(device_id)
+        sel = self.input_listbox.curselection()
+        if not sel: return
+        self.selected_input_device_var.set(self.input_listbox.get(sel[0]))
+        self.start_input_stream(int(self.input_listbox.get(sel[0]).split(']')[0][1:]))
 
     def on_output_device_select(self, event):
-        selection_indices = self.output_listbox.curselection()
-        if not selection_indices: return
-        selected_text = self.output_listbox.get(selection_indices[0])
-        self.selected_output_device_var.set(selected_text)
+        sel = self.output_listbox.curselection()
+        if not sel: return
+        self.selected_output_device_var.set(self.output_listbox.get(sel[0]))
 
     def toggle_output_test(self):
         if self.is_testing_output: self.stop_output_test()
         else:
-            selected_text = self.selected_output_device_var.get()
-            if selected_text == "None" or "[" not in selected_text: return
-            device_id = int(selected_text.split(']')[0][1:])
-            self.start_output_test(device_id)
+            sel_text = self.selected_output_device_var.get()
+            if sel_text == "None" or "[" not in sel_text: return
+            self.start_output_test(int(sel_text.split(']')[0][1:]))
 
     def start_input_stream(self, device_id):
         if self.input_stream: self.input_stream.close()
         try:
             samplerate = sd.query_devices(device_id, 'input')['default_samplerate']
             self.input_stream = sd.InputStream(device=device_id, channels=1, samplerate=samplerate, callback=self.input_audio_callback)
-            threading.Thread(target=self.input_stream.start, daemon=True).start()
+            self.input_stream.start()
         except Exception as e: print(f"Error starting input stream: {e}")
 
-    def input_audio_callback(self, indata, frames, time_info, status):
+    def input_audio_callback(self, indata, frames, time, status):
         rms = np.sqrt(np.mean(indata**2)); current_db = 20 * math.log10(rms) if rms > 0 else MIN_DB
         self.input_audio_queue.put(current_db)
 
@@ -701,8 +630,8 @@ class AudioApp(tk.Tk):
         try:
             samplerate = sd.query_devices(device_id, 'output')['default_samplerate']
             self.output_stream = sd.OutputStream(device=device_id, channels=1, samplerate=samplerate, callback=self.output_audio_callback)
-            threading.Thread(target=self.output_stream.start, daemon=True).start()
-        except Exception as e: print(f"Error starting output test: {e}"); self.stop_output_test()
+            self.output_stream.start()
+        except Exception as e: self.stop_output_test()
 
     def stop_output_test(self):
         if self.output_stream: self.output_stream.close()
@@ -710,30 +639,32 @@ class AudioApp(tk.Tk):
         self.test_output_button.config(text="Test")
         self.output_smoothed_db = MIN_DB; self.output_peak_db = MIN_DB
 
-    def output_audio_callback(self, outdata, frames, time_info, status):
-        t = (self.output_start_idx + np.arange(frames)) / self.output_stream.samplerate; t = t.reshape(-1, 1)
-        waveform = 0.5 * np.sin(2 * np.pi * TEST_TONE_FREQUENCY * t); outdata[:] = waveform
+    def output_audio_callback(self, outdata, frames, time, status):
+        t = (self.output_start_idx + np.arange(frames)) / self.output_stream.samplerate
+        outdata[:] = 0.5 * np.sin(2 * np.pi * TEST_TONE_FREQUENCY * t).reshape(-1, 1)
         self.output_start_idx += frames
-        rms = np.sqrt(np.mean(waveform**2)); current_db = 20 * math.log10(rms) if rms > 0 else MIN_DB
+        rms = np.sqrt(np.mean(outdata[:]**2)); current_db = 20 * math.log10(rms) if rms > 0 else MIN_DB
         self.output_audio_queue.put(current_db)
 
     def process_audio_queues(self):
         try:
-            while not self.input_audio_queue.empty():
-                current_db = self.input_audio_queue.get_nowait()
-                self.input_smoothed_db = (SMOOTHING_FACTOR * self.input_smoothed_db) + ((1 - SMOOTHING_FACTOR) * current_db)
-                if self.input_smoothed_db > self.input_peak_db: self.input_peak_db = self.input_smoothed_db; self.input_peak_hold_time = time.time()
+            current_db = self.input_audio_queue.get_nowait()
+            self.input_smoothed_db = (SMOOTHING_FACTOR * self.input_smoothed_db) + ((1 - SMOOTHING_FACTOR) * current_db)
+            if self.input_smoothed_db > self.input_peak_db: self.input_peak_db, self.input_peak_hold_time = self.input_smoothed_db, time.time()
         except queue.Empty: pass
         if time.time() - self.input_peak_hold_time > PEAK_HOLD_DURATION: self.input_peak_db = max(self.input_smoothed_db, self.input_peak_db - 2)
+        
         try:
-            while not self.output_audio_queue.empty():
-                current_db = self.output_audio_queue.get_nowait()
-                self.output_smoothed_db = (SMOOTHING_FACTOR * self.output_smoothed_db) + ((1 - SMOOTHING_FACTOR) * current_db)
-                if self.output_smoothed_db > self.output_peak_db: self.output_peak_db = self.output_smoothed_db; self.output_peak_hold_time = time.time()
+            current_db = self.output_audio_queue.get_nowait()
+            self.output_smoothed_db = (SMOOTHING_FACTOR * self.output_smoothed_db) + ((1 - SMOOTHING_FACTOR) * current_db)
+            if self.output_smoothed_db > self.output_peak_db: self.output_peak_db, self.output_peak_hold_time = self.output_smoothed_db, time.time()
         except queue.Empty: pass
+        
         if self.is_testing_output:
             if time.time() - self.output_peak_hold_time > PEAK_HOLD_DURATION: self.output_peak_db = max(self.output_smoothed_db, self.output_peak_db - 2)
-        else: self.output_smoothed_db = max(MIN_DB, self.output_smoothed_db - 3); self.output_peak_db = max(self.output_smoothed_db, self.output_peak_db - 3)
+        else:
+            self.output_smoothed_db = max(MIN_DB, self.output_smoothed_db - 3); self.output_peak_db = max(self.output_smoothed_db, self.output_peak_db - 3)
+        
         self.update_vu_meter_canvas(self.input_vu_meter_canvas, self.input_smoothed_db, self.input_peak_db)
         self.update_vu_meter_canvas(self.output_vu_meter_canvas, self.output_smoothed_db, self.output_peak_db)
         self.after(50, self.process_audio_queues)
@@ -742,22 +673,21 @@ class AudioApp(tk.Tk):
         width, height = canvas.winfo_width(), canvas.winfo_height()
         if width <= 1: return
         canvas.delete("all")
-        clamped_db = max(MIN_DB, min( smoothed_db, MAX_DB)); bar_length = int(((clamped_db - MIN_DB) / (MAX_DB - MIN_DB)) * width)
+        bar_len = int(((max(MIN_DB, min(smoothed_db, MAX_DB)) - MIN_DB) / (MAX_DB - MIN_DB)) * width)
         green_w, yellow_w = int(width * 0.7), int(width * 0.9)
-        if bar_length > 0: canvas.create_rectangle(0, 0, min(bar_length, green_w), height, fill="#4CAF50", width=0)
-        if bar_length > green_w: canvas.create_rectangle(green_w, 0, min(bar_length, yellow_w), height, fill="#FFC107", width=0)
-        if bar_length > yellow_w: canvas.create_rectangle(yellow_w, 0, bar_length, height, fill="#F44336", width=0)
-        clamped_peak_db = max(MIN_DB, min(peak_db, MAX_DB)); peak_pos = int(((clamped_peak_db - MIN_DB) / (MAX_DB - MIN_DB)) * width)
+        if bar_len > 0: canvas.create_rectangle(0, 0, min(bar_len, green_w), height, fill="#4CAF50", width=0)
+        if bar_len > green_w: canvas.create_rectangle(green_w, 0, min(bar_len, yellow_w), height, fill="#FFC107", width=0)
+        if bar_len > yellow_w: canvas.create_rectangle(yellow_w, 0, bar_len, height, fill="#F44336", width=0)
+        peak_pos = int(((max(MIN_DB, min(peak_db, MAX_DB)) - MIN_DB) / (MAX_DB - MIN_DB)) * width)
         if peak_pos > 1: canvas.create_line(peak_pos, 0, peak_pos, height, fill="black", width=2)
-        canvas.create_text(width - 10, height / 2, text=f"{smoothed_db:.2f} dB", anchor="e", fill="black")
+        canvas.create_text(width - 10, height / 2, text=f"{smoothed_db:.2f} dB", anchor="e")
 
 if __name__ == "__main__":
     if not os.path.exists(INI_FILE_PATH):
         with open(INI_FILE_PATH, "w", encoding='utf-8') as f:
-            # --- MODIFICATION START ---
-            # Added a new [MusicRecognition] section to the default INI file
             f.write("[General]\n"
-                    "setting1 = value1\n\n"
+                    "setting1 = value1\n"
+                    "session_id = replace_with_real_session_id\n\n" # Added for demonstration
                     "[Audio]\n"
                     "selected_input = None\n"
                     "selected_output = None\n\n"
@@ -768,23 +698,17 @@ if __name__ == "__main__":
                     "camera_index = None\n"
                     "smol_vlm_model_id = HuggingFaceTB/SmolVLM-500M-Instruct\n\n"
                     "[Watcher]\n"
-                    "# This must be the full, absolute path to the audio file created by your Flask server.\n"
-                    "# Use forward slashes (/) or double backslashes (\\\\) for the path.\n"
-                    "target_file_path = C:/Users/your_user/Documents/AI/Gem-System/StyleTTS2/server_output.wav\n\n"
+                    "target_file_path = C:/path/to/server_output.wav\n\n"
                     "[Neurosync]\n"
                     "neurosync_local_url = http://127.0.0.1:9000/audio_to_blendshapes\n\n"
                     "[NeurosyncLocalAPI]\n"
                     "host = 127.0.0.1\n"
-                    "port = 9000\n"
-                    "endpoint_url = http://127.0.0.1:5000\n"
-                    "timeout_seconds = 60\n"
-                    "enable_logging = true\n\n"
+                    "port = 9000\n\n"
                     "[LiveLink]\n"
                     "ip = 192.168.1.101\n"
                     "port = 11111\n\n"
                     f"[{DROPDOWN_SECTION}]\n"
                     f"{DROPDOWN_KEY} = gemini\n")
-            # --- MODIFICATION END ---
             
     app = AudioApp()
     app.mainloop()
