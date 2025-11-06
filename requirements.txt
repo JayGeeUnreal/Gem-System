@@ -1,4 +1,3 @@
-hf_xet
 Flask
 Flask-Cors
 google-generativeai
@@ -25,3 +24,4 @@ timecode
 pandas
 pydub
 traceback
+youtube-search-python

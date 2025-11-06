@@ -8,6 +8,7 @@
 # - A THREAD-SAFE unified RAG( ChromaDB) memory system.
 # - Location awareness, OSC command bypass, multi-platform broadcasting & more.
 # - Music recognition with selectable input device and configurable triggers.
+# - Music downloader.
 # ==============================================================================
 
 import requests
@@ -30,6 +31,11 @@ import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
+import subprocess
+import traceback
+import queue
+# ------------------------------------------
+
 import sounddevice as sd
 import soundfile as sf
 # ------------------------------------------
@@ -41,7 +47,7 @@ def load_config():
     global MUSIC_RECOGNITION_ENABLED, MUSIC_RECOGNITION_SETTINGS
 
     config_file = 'mcp_settings.ini'
-    config_parser = configparser.ConfigParser()
+    config_parser = configparser.ConfigParser(interpolation=None) 
     if not os.path.exists(config_file): sys.exit(f"FATAL ERROR: Config file '{config_file}' not found.")
     config_parser.read(config_file)
     settings = {}
@@ -81,7 +87,6 @@ def load_config():
         raw_rag_triggers = config_parser.get('RAG', 'rag_trigger_words', fallback='')
         settings['rag_trigger_words'] = [trigger.strip().lower() for trigger in raw_rag_triggers.split(',') if trigger.strip()]
         
-        # New setting from [Audio] section
         settings['audio_selected_input_raw'] = config_parser.get('Audio', 'selected_input', fallback='').strip()
 
         if config_parser.has_section('MusicRecognition'):
@@ -110,7 +115,18 @@ def load_config():
         else:
             settings['music_recognition_enabled'] = False
             MUSIC_RECOGNITION_ENABLED = False
-        # ----------------------------------------------------
+        
+        # --- 
+        print("--- LOADER DEBUG: Checking for [MusicDownloader] section ---")
+        if config_parser.has_section('MusicDownloader'):
+            print("--- LOADER DEBUG: SUCCESS! Found [MusicDownloader] section.")
+            raw_download_triggers = config_parser.get('MusicDownloader', 'trigger_words', fallback='')
+            print(f"--- LOADER DEBUG: Raw 'trigger_words' string is: '{raw_download_triggers}'")
+            settings['download_trigger_words'] = [word.strip().lower() for word in raw_download_triggers.split(',') if word.strip()]
+        else:
+            print("--- LOADER DEBUG: FAILED! Did not find [MusicDownloader] section.")
+            settings['download_trigger_words'] = []
+        # -------------------------------------------
 
     except Exception as e:
         sys.exit(f"FATAL ERROR: A setting is missing or invalid in '{config_file}'. Details: {e}")
@@ -127,21 +143,17 @@ def select_audio_device():
     print("\n" + "-"*70)
     print("--- Configuring Audio Device for Music Recognition ---")
 
-    # Get the raw setting string, e.g., "[2] Voicemeeter..."
     configured_device_str = config.get('audio_selected_input_raw', '')
 
     try:
         devices = sd.query_devices()
-        # Create a dictionary of valid input devices, keyed by their index
         input_devices = {d['index']: d for d in devices if d['max_input_channels'] > 0}
 
         if not input_devices:
             print("MCP ERROR: No audio input devices found.")
             return None
 
-        # --- Priority 1: Parse and use the device from the settings file ---
         if configured_device_str:
-            # Use regex to find a number inside square brackets, e.g., "[2]" -> "2"
             match = re.match(r'\[(\d+)\]', configured_device_str)
             if match:
                 configured_index = int(match.group(1))
@@ -150,20 +162,16 @@ def select_audio_device():
                     print(f"MCP INFO: Using configured audio device from settings: Index {configured_index} ('{device_name}')")
                     return configured_index
                 else:
-                    # The index from the file is not a valid input device
                     print(f"MCP WARNING: Configured audio device index '{configured_index}' is not a valid input device. Falling back to default.")
             else:
-                # The setting string is not in the expected format "[index] name"
                 print(f"MCP WARNING: Could not parse device index from setting '{configured_device_str}'. Falling back to default.")
 
-        # --- Priority 2: Fallback to the system's default input device ---
         default_idx = sd.default.device[0]
         if default_idx in input_devices:
             device_name = input_devices[default_idx]['name']
             print(f"MCP INFO: No valid device specified in settings. Using system default: Index {default_idx} ('{device_name}')")
             return default_idx
 
-        # --- Priority 3: If default is not valid, use the first available input device ---
         first_available_idx = next(iter(input_devices))
         device_name = input_devices[first_available_idx]['name']
         print(f"MCP WARNING: System default device is not a valid input. Using first available device: Index {first_available_idx} ('{device_name}')")
@@ -187,7 +195,8 @@ gemini_model = None
 
 VISION_HISTORY = deque(maxlen=5)
 CURRENT_LOCATION = "the stream room"
-SELECTED_INPUT_DEVICE_INDEX = None # Will be set at startup
+SELECTED_INPUT_DEVICE_INDEX = None
+download_queue = queue.Queue()
 
 from sentence_transformers import SentenceTransformer
 EMBEDDING_MODEL_NAME = 'google/embedding-gemma-300m'
@@ -484,6 +493,57 @@ def send_to_tts(text_to_speak: str):
 # ------------------------------------------------------------------------------
 
 
+# --- Music Downloader Helper Functions ---
+# ------------------------------------------------------------------------------
+def handle_song_download_task(query: str):
+    """Executes the download worker script for a given song query."""
+    print(f"MCP DOWNLOAD: Starting worker for query: '{query}'")
+    downloaded_filename = None
+    try:
+        python_executable = sys.executable
+        worker_script_path = os.path.join(os.path.dirname(__file__), "download_worker.py")
+        if not os.path.exists(worker_script_path):
+            print("!!! MCP DOWNLOAD ERROR: 'download_worker.py' not found.")
+            return
+
+        command = [python_executable, worker_script_path, query]
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding='utf-8',
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+        )
+
+        for line in iter(process.stdout.readline, ''):
+            line = line.strip()
+            print(f"  [Worker]: {line}")
+            if '.mp3' in line:
+                clean_filename = os.path.basename(line)
+                downloaded_filename = clean_filename
+                print(f"MCP AUTOPLAY: Captured and cleaned filename: '{downloaded_filename}'")
+        
+        process.wait()
+        print("MCP DOWNLOAD: Worker process finished.")
+
+        if downloaded_filename:
+            print(f"MCP AUTOPLAY: Download successful. Creating command file for '{downloaded_filename}'")
+            with open("autoplay.txt", 'w', encoding='utf-8') as f:
+                f.write(downloaded_filename)
+        else:
+            print("MCP AUTOPLAY: Download may have failed or filename not provided by worker.")
+
+    except Exception as e:
+        print(f"!!! MCP DOWNLOAD ERROR: Failed to execute download worker: {e}")
+        traceback.print_exc()
+
+def _process_download_queue():
+    """Background thread function to process song download requests one by one."""
+    while True:
+        query = download_queue.get()
+        handle_song_download_task(query)
+        download_queue.task_done()
+# ------------------------------------------------------------------------------
+
+
 # --- Music Recognition Helper Functions ---
 # ------------------------------------------------------------------------------
 def record_audio_for_music(filename):
@@ -563,6 +623,7 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
         return ""
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
     add_chat_to_memory("User", clean_user_text)
+    print(f"DEBUG: Loaded download triggers: {config.get('download_trigger_words')}")
 
     if MUSIC_RECOGNITION_ENABLED and any(keyword in clean_user_text.lower() for keyword in config['music_trigger_words']):
         print(f"MCP MUSIC: Detected music recognition request: '{clean_user_text}'")
@@ -576,13 +637,25 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
         return "Listening..."
     # --------------------------------------------------------------------
 
+    is_music_download_request = any(clean_user_text.lower().startswith(trigger) for trigger in config.get('download_trigger_words', []))
     is_time_request = any(keyword in clean_user_text.lower() for keyword in ['time is it', 'what time', 'current time', 'date'])
     is_rag_request = any(clean_user_text.lower().startswith(trigger) for trigger in config['rag_trigger_words'])
     is_osc_request = config['osc_enabled'] and any(clean_user_text.lower().startswith(verb) for verb in config['osc_trigger_verbs'])
     is_vision_request = any(trigger in clean_user_text.lower() for trigger in config['vision_trigger_words'])
 
     final_response = ""
-    if is_osc_request:
+    
+    if is_music_download_request:
+        trigger_found = next((trigger for trigger in config['download_trigger_words'] if clean_user_text.lower().startswith(trigger)), "")
+        search_query = clean_user_text[len(trigger_found):].strip()
+        if not search_query:
+            final_response = "What song would you like me to download?"
+        else:
+            print(f"MCP DOWNLOAD: Adding '{search_query}' to internal download queue.")
+            download_queue.put(search_query)
+            final_response = f"Okay, I've added '{search_query}' to the download queue."
+    
+    elif is_osc_request:
         verb_found = next((verb for verb in config['osc_trigger_verbs'] if clean_user_text.lower().startswith(verb)), "")
         destination = clean_user_text[len(verb_found):].strip()
         if not destination: final_response = "Where do you want me to go?"
@@ -629,31 +702,54 @@ def handle_chat_request():
     data = request.json
     chat_message = data.get('chatmessage', '')
     print(f"\nMCP: Received from [Chat]: '{chat_message}'")
+    
     final_response = process_task(source='chat', user_text=chat_message)
-    if final_response: send_to_tts(final_response); send_to_social_stream(final_response)
+    
+    if final_response:
+        send_to_tts(final_response)
+        send_to_social_stream(final_response)
+        add_chat_to_memory("Gem", final_response)
+        
     return jsonify({"status": "ok"})
+
 @app.route('/vision', methods=['POST'])
 def handle_vision_request():
     data = request.json
-    user_text, vision_context = data.get('text', ''), data.get('vision_context', '')
+    user_text = data.get('text', ''); vision_context = data.get('vision_context', '')
     print(f"\nMCP: Received from [Vision]: '{user_text}'")
+    
     final_response = process_task(source='vision', user_text=user_text, vision_context=vision_context)
-    if final_response: send_to_tts(final_response); send_to_social_stream(final_response)
+    
+    if final_response:
+        send_to_tts(final_response)
+        send_to_social_stream(final_response)
+        add_chat_to_memory("Gem", final_response)
+        
     return jsonify({'response': final_response})
+    
 @app.route('/audio', methods=['POST'])
 def handle_audio_request():
     data = request.json
     user_text = data.get('text', '')
     print(f"\nMCP: Received from [Audio]: '{user_text}'")
+    
     final_response = process_task(source='audio', user_text=user_text)
-    if final_response: send_to_tts(final_response); send_to_social_stream(final_response)
+    
+    if final_response:
+        send_to_tts(final_response)
+        send_to_social_stream(final_response)
+        add_chat_to_memory("Gem", final_response)
+        
     return jsonify({'response': final_response})
+
 @app.route('/update_vision', methods=['POST'])
 def update_vision_context():
     global VISION_HISTORY
     data = request.json
     new_context = data.get('vision_context')
-    if new_context: print(f"\nMCP MEMORY: Visual history has been UPDATED -> '{new_context[:70]}...'"); VISION_HISTORY.appendleft(new_context)
+    if new_context:
+        print(f"\nMCP MEMORY: Visual history has been UPDATED -> '{new_context[:70]}...'")
+        VISION_HISTORY.appendleft(new_context)
     return jsonify({"status": "vision context updated"})
 # ------------------------------------------------------------------------------
 
@@ -671,15 +767,21 @@ if __name__ == '__main__':
             # This warning is shown if no input devices could be found at all.
             print("--- CRITICAL WARNING: Could not configure an audio device. Music recognition will fail. ---")
 
+    download_thread = threading.Thread(target=_process_download_queue, daemon=True)
+    download_thread.start()
+    # --------------------------------------------------
+
     clear_screen()
     print(f"--- Using Audio Input Device Index: {SELECTED_INPUT_DEVICE_INDEX} ---")
     print(f"--- LLM Mode: {config['llm_choice'].upper()} ---")
-    if config['osc_enabled']: print(f"--- OSC sending ENABLED to {config['osc_ip']}:{config['port']} ---")
+    if config['osc_enabled']: print(f"--- OSC sending ENABLED to {config['osc_ip']}:{config['osc_port']} ---")
     else: print("--- OSC sending is DISABLED ---")
     if MUSIC_RECOGNITION_ENABLED:
         print("--- Music Recognition ENABLED ---")
     else:
         print("--- Music Recognition DISABLED ---")
+    if config.get('download_trigger_words'):
+        print(f"--- Music Downloader ENABLED ---")
     print(f"--- API Server listening on http://{config['host']}:{config['port']} ---")
     print("="*70 + "\n")
     app.run(host=config['host'], port=config['port'], debug=True, use_reloader=False)
