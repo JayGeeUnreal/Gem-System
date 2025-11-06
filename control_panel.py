@@ -14,6 +14,7 @@ import traceback
 import subprocess
 from tkinter import messagebox
 import sys
+from youtubesearchpython import VideosSearch # <-- NEW: Import for YouTube search
 
 # --- Configuration ---
 MIN_DB = -60.0
@@ -25,25 +26,23 @@ INI_FILE_PATH = "mcp_settings.ini"
 DROPDOWN_SECTION = "MCP"
 DROPDOWN_KEY = "llm_choice"
 DROPDOWN_OPTIONS = ["gemini", "ollama", "ollama_vision", "minitron"]
-
-# --- NEW: List of sensitive keys to hide by default ---
 SENSITIVE_KEYS = ["api_key", "session_id"] 
 
 class AudioApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Master Control Panel")
-        
         self.geometry("1400x880") 
         
         self.config = configparser.ConfigParser(interpolation=None)
         self.ini_entries = {}
-        # --- NEW: Dictionary to store the actual values of sensitive fields ---
         self.sensitive_values = {}
-
         self.input_audio_queue = queue.Queue()
         self.output_audio_queue = queue.Queue()
         self.video_frame_queue = queue.Queue()
+        # --- NEW: Queue for handling music search results ---
+        self.music_search_results_queue = queue.Queue()
+        
         self.input_stream = None
         self.output_stream = None
         self.is_testing_output = False
@@ -63,6 +62,8 @@ class AudioApp(tk.Tk):
         self.reload_ini_ui()
         self.process_audio_queues()
         self.process_video_queue()
+        # --- NEW: Start the processor for the music search results ---
+        self.process_music_search_queue()
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
@@ -78,6 +79,10 @@ class AudioApp(tk.Tk):
         neurosync_tab = ttk.Frame(notebook)
         notebook.add(neurosync_tab, text="Neurosync Settings")
 
+        # --- NEW: Create and add the Music Requests tab ---
+        music_requests_tab = ttk.Frame(notebook)
+        notebook.add(music_requests_tab, text="Music Requests")
+        
         main_paned_window = tk.PanedWindow(audio_ini_tab, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, bd=2)
         main_paned_window.pack(fill="both", expand=True)
         left_panel = ttk.Frame(main_paned_window)
@@ -94,6 +99,156 @@ class AudioApp(tk.Tk):
         self.setup_ini_widgets(right_panel)
         self.setup_vision_widgets(vision_tab)
         self.setup_neurosync_widgets(neurosync_tab)
+        # --- NEW: Call the setup method for the new tab ---
+        self.setup_music_requests_widgets(music_requests_tab)
+
+
+    # --- NEW: All code for the Music Requests tab is below ---
+
+    def setup_music_requests_widgets(self, parent_frame):
+        """Creates all the widgets for the Music Requests tab."""
+        # Main frame for the search controls
+        search_controls_frame = ttk.LabelFrame(parent_frame, text="YouTube Song Search", padding=10)
+        search_controls_frame.pack(fill="x", padx=10, pady=10)
+        
+        # --- Input Fields ---
+        # Song Title
+        ttk.Label(search_controls_frame, text="Song Title:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.song_title_entry = ttk.Entry(search_controls_frame, width=40)
+        self.song_title_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        
+        # Artist
+        ttk.Label(search_controls_frame, text="Artist:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.artist_entry = ttk.Entry(search_controls_frame, width=40)
+        self.artist_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+
+        # Optional Keywords
+        ttk.Label(search_controls_frame, text="Optional Keywords:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.optional_keywords_entry = ttk.Entry(search_controls_frame, width=40)
+        self.optional_keywords_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+
+        # --- Search Button ---
+        search_button = ttk.Button(search_controls_frame, text="Search on YouTube", command=self.start_music_search)
+        search_button.grid(row=1, column=2, rowspan=2, padx=10, pady=5, sticky="ns")
+        
+        search_controls_frame.grid_columnconfigure(1, weight=1) # Makes the entry column expandable
+
+        # --- Results Display ---
+        results_frame = ttk.LabelFrame(parent_frame, text="Search Results", padding=10)
+        results_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        # Create the Treeview (table)
+        columns = ("#", "title", "channel", "duration", "link")
+        self.music_results_treeview = ttk.Treeview(results_frame, columns=columns, show="headings", height=15)
+        
+        # Define column headings
+        self.music_results_treeview.heading("#", text="#", anchor="center")
+        self.music_results_treeview.heading("title", text="Title")
+        self.music_results_treeview.heading("channel", text="Channel", anchor="center")
+        self.music_results_treeview.heading("duration", text="Duration", anchor="center")
+        self.music_results_treeview.heading("link", text="Link")
+        
+        # Define column widths
+        self.music_results_treeview.column("#", width=30, stretch=False, anchor="center")
+        self.music_results_treeview.column("title", width=400)
+        self.music_results_treeview.column("channel", width=150)
+        self.music_results_treeview.column("duration", width=80, stretch=False, anchor="center")
+        self.music_results_treeview.column("link", width=350)
+
+        # Add a scrollbar
+        scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=self.music_results_treeview.yview)
+        self.music_results_treeview.configure(yscrollcommand=scrollbar.set)
+        
+        self.music_results_treeview.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+    def start_music_search(self):
+        """Starts the YouTube search in a background thread to prevent GUI freezing."""
+        # Get user input from the entry fields
+        song = self.song_title_entry.get().strip()
+        artist = self.artist_entry.get().strip()
+        optional = self.optional_keywords_entry.get().strip()
+
+        if not song and not artist:
+            messagebox.showwarning("Empty Search", "Please enter a song title or artist to search for.")
+            return
+
+        # Clear the previous results and show a "searching" message
+        for i in self.music_results_treeview.get_children():
+            self.music_results_treeview.delete(i)
+        self.music_results_treeview.insert("", "end", values=("", "Searching, please wait...", "", "", ""))
+
+        # Start the search in a new thread
+        search_thread = threading.Thread(
+            target=self.perform_music_search,
+            args=(song, artist, optional),
+            daemon=True
+        )
+        search_thread.start()
+
+    def perform_music_search(self, song_title, artist, optional_terms):
+        """The actual search logic that runs in the background."""
+        
+        def _perform_single_search(query, limit=10):
+            try:
+                search = VideosSearch(query, limit=limit)
+                return search.result().get('result', [])
+            except Exception:
+                return []
+
+        # Attempt 1: Full query
+        full_query = " ".join(filter(None, [song_title, artist, optional_terms]))
+        results = _perform_single_search(full_query)
+
+        # Attempt 2: Fallback to Song + Artist
+        if not results:
+            song_artist_query = " ".join(filter(None, [song_title, artist]))
+            if song_artist_query and song_artist_query != full_query:
+                time.sleep(0.5)
+                results = _perform_single_search(song_artist_query)
+
+        # Attempt 3: Fallback to just Song Title
+        if not results and song_title:
+            time.sleep(0.5)
+            results = _perform_single_search(song_title)
+        
+        # Put the final results into the queue for the main thread
+        self.music_search_results_queue.put(results)
+
+    def process_music_search_queue(self):
+        """Checks the queue for search results and updates the UI."""
+        try:
+            results = self.music_search_results_queue.get_nowait()
+            self.update_music_results_treeview(results)
+        except queue.Empty:
+            pass # No results yet, do nothing
+        finally:
+            # Check again after 100ms
+            self.after(100, self.process_music_search_queue)
+
+    def update_music_results_treeview(self, video_list):
+        """Clears the treeview and populates it with new results."""
+        # Clear the "Searching..." message or any old results
+        for i in self.music_results_treeview.get_children():
+            self.music_results_treeview.delete(i)
+
+        if not video_list:
+            self.music_results_treeview.insert("", "end", values=("", "No results found.", "", "", ""))
+            return
+            
+        # Insert new results into the table
+        for i, video in enumerate(video_list, 1):
+            values = (
+                i,
+                video.get('title', 'N/A'),
+                video.get('channel', {}).get('name', 'N/A'),
+                video.get('duration', 'N/A'),
+                video.get('link', 'N/A')
+            )
+            self.music_results_treeview.insert("", "end", values=values)
+
+    # --- END OF NEW MUSIC REQUESTS CODE ---
+
 
     def setup_neurosync_widgets(self, parent_frame):
         def create_scrollable_frame(parent, text_label):
@@ -316,25 +471,16 @@ class AudioApp(tk.Tk):
         except Exception as e:
             messagebox.showerror("Error", f"Could not open the help file:\n{e}")
 
-    # --- NEW: Function to toggle visibility of sensitive fields ---
     def toggle_sensitive_field(self, entry_widget, button_widget):
         if button_widget.cget("text") == "Show":
-            # --- SHOW THE VALUE ---
-            # Retrieve the real value from storage
             real_value = self.sensitive_values.get(entry_widget, "")
-            # Configure entry to show text, then update its content
             entry_widget.config(show="")
             entry_widget.delete(0, tk.END)
             entry_widget.insert(0, real_value)
-            # Update button text
             button_widget.config(text="Hide")
         else:
-            # --- HIDE THE VALUE ---
-            # First, save the current value from the entry in case it was edited
             self.sensitive_values[entry_widget] = entry_widget.get()
-            # Configure entry to hide text, then re-insert value to get correct '*' count
             entry_widget.config(show="*")
-            # Update button text
             button_widget.config(text="Show")
 
     def reload_ini_ui(self):
@@ -343,7 +489,6 @@ class AudioApp(tk.Tk):
                 for widget in container.winfo_children():
                     widget.destroy()
         self.ini_entries.clear()
-        # --- NEW: Clear sensitive values on reload ---
         self.sensitive_values.clear()
 
         success, error_message = self._read_ini_safely()
@@ -377,26 +522,16 @@ class AudioApp(tk.Tk):
                 label = ttk.Label(row_frame, text=f"{key}:", width=20); label.pack(side="left", anchor="n", pady=2)
                 
                 widget = None
-                # --- MODIFICATION START: Handle sensitive keys differently ---
                 if key in SENSITIVE_KEYS:
-                    # Create a sub-frame for the entry and its button
                     widget_frame = ttk.Frame(row_frame)
                     widget_frame.pack(side="left", fill="x", expand=True)
-
-                    # Create the entry widget, hidden by default
                     widget = ttk.Entry(widget_frame, show="*")
                     widget.insert(0, value)
                     widget.pack(side="left", fill="x", expand=True)
-                    
-                    # Store the actual value separately
                     self.sensitive_values[widget] = value
-
-                    # Create the Show/Hide button
                     toggle_button = ttk.Button(widget_frame, text="Show", width=5)
-                    # Use a lambda to pass the specific widgets to the toggle function
                     toggle_button.config(command=lambda w=widget, b=toggle_button: self.toggle_sensitive_field(w, b))
                     toggle_button.pack(side="left", padx=(5,0))
-                # --- MODIFICATION END: Regular widget creation below ---
                 elif section == DROPDOWN_SECTION and key == DROPDOWN_KEY:
                     widget = ttk.Combobox(row_frame, values=DROPDOWN_OPTIONS, state="readonly")
                     if value in DROPDOWN_OPTIONS: widget.set(value)
@@ -437,15 +572,10 @@ class AudioApp(tk.Tk):
             settings_to_update[section] = {}
             for key, widget in keys.items():
                 value = ""
-                # --- MODIFICATION START: Ensure real value is saved for sensitive fields ---
                 if widget in self.sensitive_values:
-                    # If the field is currently visible, the user might have edited it.
-                    # Grab the current text from the widget and update our storage.
                     if widget.cget("show") == "":
                         self.sensitive_values[widget] = widget.get()
-                    # Always get the value from our secure storage, not the widget itself
                     value = self.sensitive_values[widget]
-                # --- MODIFICATION END: Regular save logic below ---
                 else:
                     value = widget.get("1.0", tk.END).strip() if isinstance(widget, tk.Text) else widget.get()
                 
@@ -687,7 +817,7 @@ if __name__ == "__main__":
         with open(INI_FILE_PATH, "w", encoding='utf-8') as f:
             f.write("[General]\n"
                     "setting1 = value1\n"
-                    "session_id = replace_with_real_session_id\n\n" # Added for demonstration
+                    "session_id = replace_with_real_session_id\n\n"
                     "[Audio]\n"
                     "selected_input = None\n"
                     "selected_output = None\n\n"
