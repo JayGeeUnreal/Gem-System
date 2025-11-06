@@ -1,5 +1,7 @@
 !! OBS I´m using Python 3.10 when testing, it might work with other versions but thats the python version i use..
 
+!! Use the Music Request system at your own risc. You could be breaking TOS for the Social media platforms used. !!'
+
 Gem-System and Neurosync are now using the same venv (Conda).
 
 For Unreal Engine Face Blendshapes its using the same technology as Convai (As far as i can tell) https://www.convai.com/
