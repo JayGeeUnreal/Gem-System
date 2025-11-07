@@ -637,17 +637,25 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
         return "Listening..."
     # --------------------------------------------------------------------
 
-    is_music_download_request = any(clean_user_text.lower().startswith(trigger) for trigger in config.get('download_trigger_words', []))
+    is_music_download_request = any(trigger in clean_user_text.lower() for trigger in config.get('download_trigger_words', []))
     is_time_request = any(keyword in clean_user_text.lower() for keyword in ['time is it', 'what time', 'current time', 'date'])
     is_rag_request = any(clean_user_text.lower().startswith(trigger) for trigger in config['rag_trigger_words'])
     is_osc_request = config['osc_enabled'] and any(clean_user_text.lower().startswith(verb) for verb in config['osc_trigger_verbs'])
     is_vision_request = any(trigger in clean_user_text.lower() for trigger in config['vision_trigger_words'])
 
+    if is_music_download_request and not config.get('music_downloader_enabled', False):
+        final_response = "Sorry, the music request system is currently turned off."
+        add_chat_to_memory("Gem", final_response)
+        return final_response
+
     final_response = ""
     
     if is_music_download_request:
-        trigger_found = next((trigger for trigger in config['download_trigger_words'] if clean_user_text.lower().startswith(trigger)), "")
-        search_query = clean_user_text[len(trigger_found):].strip()
+        # Find the trigger word that was used to formulate a better search query
+        trigger_found = next((trigger for trigger in config['download_trigger_words'] if trigger in clean_user_text.lower()), "")
+        # Remove the trigger phrase to get just the song title/artist
+        search_query = clean_user_text.lower().replace(trigger_found, "", 1).strip()
+        
         if not search_query:
             final_response = "What song would you like me to download?"
         else:
@@ -697,6 +705,38 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
 # ------------------------------------------------------------------------------
 @app.route('/', methods=['GET'])
 def index(): return "Hello from the UNIFIED Master Control Program!"
+
+@app.route('/update_runtime_setting', methods=['POST'])
+def update_runtime_setting():
+    """
+    Updates a specific key in the global 'config' dictionary in real-time.
+    """
+    data = request.json
+    key = data.get('key')
+    value = data.get('value')
+
+    if not key:
+        return jsonify({"status": "error", "message": "Missing 'key' in request."}), 400
+
+    # Directly update the in-memory config dictionary
+    # Note: This is a simplified example. For a larger system, you might
+    # want to handle different sections and data types (int, bool, etc.)
+    
+    # Handle boolean conversion specifically for the 'enabled' toggles
+    if isinstance(value, str) and value.lower() in ['true', 'false']:
+        actual_value = value.lower() == 'true'
+    else:
+        actual_value = value
+        
+    # Assuming the keys are unique for this simple case, like 'music_downloader_enabled'
+    if key in config:
+        config[key] = actual_value
+        print(f"\nMCP REAL-TIME UPDATE: Setting '{key}' changed to -> {actual_value}")
+        return jsonify({"status": "ok", "message": f"'{key}' updated successfully."})
+    else:
+        return jsonify({"status": "error", "message": f"Key '{key}' not found in config."}), 404
+# ------------------------------------------------------------------------------
+
 @app.route('/chat', methods=['POST', 'PUT'])
 def handle_chat_request():
     data = request.json

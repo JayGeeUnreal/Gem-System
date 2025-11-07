@@ -72,6 +72,8 @@ class AudioApp(tk.Tk):
         self.output_peak_hold_time = 0
         self.vision_thread = None
         self.stop_vision_thread = False
+        
+        self.music_downloader_enabled_var = tk.BooleanVar(value=True)
 
         self.create_widgets()
         self.populate_device_lists()
@@ -124,7 +126,10 @@ class AudioApp(tk.Tk):
 
         warning_text = "(Use at your own risk, this can break the TOS for your site)"
         warning_label = ttk.Label(downloader_frame, text=warning_text, foreground="red")
-        warning_label.grid(row=0, column=0, columnspan=3, padx=5, pady=(0, 10), sticky="w")
+        warning_label.grid(row=0, column=0, columnspan=2, padx=5, pady=(0, 10), sticky="w")
+        
+        enable_check = ttk.Checkbutton(downloader_frame, text="Enable Music Request System", variable=self.music_downloader_enabled_var)
+        enable_check.grid(row=0, column=2, padx=10, pady=(0, 10), sticky="e")
 
         ttk.Label(downloader_frame, text="Song Title:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.song_title_entry = ttk.Entry(downloader_frame, width=40)
@@ -549,11 +554,19 @@ class AudioApp(tk.Tk):
         if not self._read_ini_safely():
             return
         
-        try:
+        if self.config.has_section('MusicDownloader'):
+            downloader_enabled = self.config.getboolean('MusicDownloader', 'enabled', fallback=True)
+            self.music_downloader_enabled_var.set(downloader_enabled)
+            
             queue_length_str = self.config.get('MusicDownloader', 'max_queue_length', fallback='20')
-            self.max_queue_length = int(queue_length_str)
-        except (configparser.NoSectionError, ValueError):
+            try:
+                self.max_queue_length = int(queue_length_str)
+            except ValueError:
+                self.max_queue_length = 20
+        else:
+            self.music_downloader_enabled_var.set(True)
             self.max_queue_length = 20
+            
         self.max_queue_var.set(str(self.max_queue_length))
         self.autoplay_queue = deque(self.autoplay_queue, maxlen=self.max_queue_length)
         print(f"PLAYER: Autoplay queue size set to {self.max_queue_length}")
@@ -601,11 +614,31 @@ class AudioApp(tk.Tk):
             if hasattr(self, 'smol_vlm_entry'):
                 self.smol_vlm_entry.delete(0, tk.END); self.smol_vlm_entry.insert(0, vlm_model_id)
 
+    def _send_runtime_update(self, key, value):
+        """Sends a live setting update to the running MCP script in a background thread."""
+        try:
+            MCP_HOST = self.config.get('MCP', 'host', fallback="127.0.0.1")
+            MCP_PORT = self.config.get('MCP', 'port', fallback="5000")
+            api_url = f"http://{MCP_HOST}:{MCP_PORT}/update_runtime_setting"
+            
+            payload = {"key": key, "value": value}
+            
+            requests.post(api_url, json=payload, timeout=3)
+            print(f"CONTROL PANEL: Sent live update for '{key}' to MCP.")
+            
+        except requests.exceptions.RequestException:
+            print(f"CONTROL PANEL WARNING: Could not send live update for '{key}'. MCP may not be running.")
+        except Exception as e:
+            print(f"CONTROL PANEL ERROR: An unexpected error occurred during live update: {e}")
+
     def save_ini_file(self):
+        music_downloader_enabled_state = self.music_downloader_enabled_var.get()
+        
         for section, keys in self.ini_entries.items():
             for key, widget in keys.items():
                 value = widget.get() if widget not in self.sensitive_values else self.sensitive_values.get(widget, widget.get())
                 self.config.set(section, key, value)
+                
         self.config.set('Audio', 'selected_input', self.selected_input_device_var.get())
         self.config.set('Audio', 'selected_output', self.selected_output_device_var.get())
         if hasattr(self, 'camera_combobox'): self.config.set('VisionService', 'camera_index', self.camera_combobox.get() or "None")
@@ -613,6 +646,9 @@ class AudioApp(tk.Tk):
         
         if not self.config.has_section('MusicDownloader'):
             self.config.add_section('MusicDownloader')
+            
+        self.config.set('MusicDownloader', 'enabled', str(music_downloader_enabled_state).lower())
+        
         try:
             int(self.max_queue_var.get())
             self.config.set('MusicDownloader', 'max_queue_length', self.max_queue_var.get())
@@ -621,8 +657,17 @@ class AudioApp(tk.Tk):
 
         try:
             with open(INI_FILE_PATH, 'w', encoding='utf-8') as configfile: self.config.write(configfile)
-            print("Settings successfully saved!")
-        except Exception as e: print(f"Error writing to INI file: {e}")
+            print("Settings successfully saved to mcp_settings.ini!")
+        except Exception as e: 
+            print(f"Error writing to INI file: {e}")
+            messagebox.showerror("Save Error", f"Could not save settings to file:\n{e}")
+            return
+
+        threading.Thread(
+            target=self._send_runtime_update, 
+            args=('music_downloader_enabled', music_downloader_enabled_state), 
+            daemon=True
+        ).start()
 
     def toggle_sensitive_field(self, entry_widget, button_widget):
         if button_widget.cget("text") == "Show":
