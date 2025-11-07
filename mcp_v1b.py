@@ -116,16 +116,15 @@ def load_config():
             settings['music_recognition_enabled'] = False
             MUSIC_RECOGNITION_ENABLED = False
         
-        # --- 
-        print("--- LOADER DEBUG: Checking for [MusicDownloader] section ---")
+        # --- THIS IS THE CRITICAL FIX ---
+        # This block now correctly loads the 'enabled' state for the downloader on startup.
         if config_parser.has_section('MusicDownloader'):
-            print("--- LOADER DEBUG: SUCCESS! Found [MusicDownloader] section.")
             raw_download_triggers = config_parser.get('MusicDownloader', 'trigger_words', fallback='')
-            print(f"--- LOADER DEBUG: Raw 'trigger_words' string is: '{raw_download_triggers}'")
             settings['download_trigger_words'] = [word.strip().lower() for word in raw_download_triggers.split(',') if word.strip()]
+            settings['music_downloader_enabled'] = config_parser.getboolean('MusicDownloader', 'enabled', fallback=False)
         else:
-            print("--- LOADER DEBUG: FAILED! Did not find [MusicDownloader] section.")
             settings['download_trigger_words'] = []
+            settings['music_downloader_enabled'] = False
         # -------------------------------------------
 
     except Exception as e:
@@ -710,30 +709,33 @@ def index(): return "Hello from the UNIFIED Master Control Program!"
 def update_runtime_setting():
     """
     Updates a specific key in the global 'config' dictionary in real-time.
+    This version is hardened to correctly handle boolean types from the control panel.
     """
     data = request.json
     key = data.get('key')
     value = data.get('value')
 
+    print(f"\n--- MCP DEBUG: Received runtime update request ---")
+    print(f"Key: {key}, Raw Value: {value}, Type of Value: {type(value)}")
+
     if not key:
         return jsonify({"status": "error", "message": "Missing 'key' in request."}), 400
 
-    # Directly update the in-memory config dictionary
-    # Note: This is a simplified example. For a larger system, you might
-    # want to handle different sections and data types (int, bool, etc.)
-    
-    # Handle boolean conversion specifically for the 'enabled' toggles
-    if isinstance(value, str) and value.lower() in ['true', 'false']:
+    # This logic correctly handles boolean True/False from the control panel,
+    # as well as string versions "true"/"false" if they are ever sent.
+    if isinstance(value, bool):
+        actual_value = value
+    elif isinstance(value, str):
         actual_value = value.lower() == 'true'
     else:
         actual_value = value
-        
-    # Assuming the keys are unique for this simple case, like 'music_downloader_enabled'
+    
     if key in config:
         config[key] = actual_value
-        print(f"\nMCP REAL-TIME UPDATE: Setting '{key}' changed to -> {actual_value}")
+        print(f"MCP REAL-TIME UPDATE: Setting '{key}' has been successfully changed to -> {actual_value}")
         return jsonify({"status": "ok", "message": f"'{key}' updated successfully."})
     else:
+        print(f"MCP REAL-TIME UPDATE FAILED: Key '{key}' not found in config.")
         return jsonify({"status": "error", "message": f"Key '{key}' not found in config."}), 404
 # ------------------------------------------------------------------------------
 
