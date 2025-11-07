@@ -128,9 +128,28 @@ class AudioApp(tk.Tk):
         warning_label = ttk.Label(downloader_frame, text=warning_text, foreground="red")
         warning_label.grid(row=0, column=0, columnspan=2, padx=5, pady=(0, 10), sticky="w")
         
-        enable_check = ttk.Checkbutton(downloader_frame, text="Enable Music Request System", variable=self.music_downloader_enabled_var)
-        enable_check.grid(row=0, column=2, padx=10, pady=(0, 10), sticky="e")
+        # --- NEW: Create a frame to hold the new button and the checkbox for better alignment ---
+        top_right_controls_frame = ttk.Frame(downloader_frame)
+        top_right_controls_frame.grid(row=0, column=2, sticky="e") # Align the frame to the right of the cell
 
+        # --- NEW: Create the 'Enable New Settings' button ---
+        # It calls the exact same save_ini_file function as the main save button.
+        save_music_settings_button = ttk.Button(
+            top_right_controls_frame,
+            text="Enable New Settings",
+            command=self.save_ini_file  # Calls the existing global save function
+        )
+        save_music_settings_button.pack(side="left", padx=(0, 10)) # Pack to the left within the frame
+
+        # Place the existing checkbox inside the new frame as well
+        enable_check = ttk.Checkbutton(
+            top_right_controls_frame,
+            text="Enable Music Request System",
+            variable=self.music_downloader_enabled_var
+        )
+        enable_check.pack(side="left") # Pack next to the button
+
+        # --- The rest of the layout remains the same ---
         ttk.Label(downloader_frame, text="Song Title:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.song_title_entry = ttk.Entry(downloader_frame, width=40)
         self.song_title_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
