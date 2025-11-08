@@ -59,6 +59,8 @@ class AudioApp(tk.Tk):
         self.background_song_is_paused = False
         self.is_starting_new_song = False
         self.background_resume_time = 0.0
+        
+        self.max_duration_var = tk.StringVar(value="10") # Variable for song duration UI
 
         self.input_stream = None
         self.output_stream = None
@@ -128,28 +130,33 @@ class AudioApp(tk.Tk):
         warning_label = ttk.Label(downloader_frame, text=warning_text, foreground="red")
         warning_label.grid(row=0, column=0, columnspan=2, padx=5, pady=(0, 10), sticky="w")
         
-        # --- NEW: Create a frame to hold the new button and the checkbox for better alignment ---
         top_right_controls_frame = ttk.Frame(downloader_frame)
-        top_right_controls_frame.grid(row=0, column=2, sticky="e") # Align the frame to the right of the cell
+        top_right_controls_frame.grid(row=0, column=2, sticky="e")
 
-        # --- NEW: Create the 'Enable New Settings' button ---
-        # It calls the exact same save_ini_file function as the main save button.
         save_music_settings_button = ttk.Button(
             top_right_controls_frame,
             text="Enable New Settings",
-            command=self.save_ini_file  # Calls the existing global save function
+            command=self.save_ini_file
         )
-        save_music_settings_button.pack(side="left", padx=(0, 10)) # Pack to the left within the frame
+        save_music_settings_button.pack(side="left", padx=(0, 10))
 
-        # Place the existing checkbox inside the new frame as well
+        ttk.Label(top_right_controls_frame, text="Max Duration (min):").pack(side="left", padx=(10, 2))
+        duration_spinbox = ttk.Spinbox(
+            top_right_controls_frame,
+            from_=1,
+            to=60, # Set a reasonable upper limit like 60 minutes
+            textvariable=self.max_duration_var,
+            width=5
+        )
+        duration_spinbox.pack(side="left")
+
         enable_check = ttk.Checkbutton(
             top_right_controls_frame,
             text="Enable Music Request System",
             variable=self.music_downloader_enabled_var
         )
-        enable_check.pack(side="left") # Pack next to the button
+        enable_check.pack(side="left", padx=10)
 
-        # --- The rest of the layout remains the same ---
         ttk.Label(downloader_frame, text="Song Title:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.song_title_entry = ttk.Entry(downloader_frame, width=40)
         self.song_title_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
@@ -222,12 +229,16 @@ class AudioApp(tk.Tk):
         if not os.path.isdir(bg_dir):
             try: os.makedirs(bg_dir)
             except OSError: pass
+        
+        self.background_song_combobox.set('')
+        self.background_song_combobox['values'] = []
+
         songs = sorted([f for f in os.listdir(bg_dir) if f.endswith('.mp3')])
-        current_selection = self.background_song_combobox.get()
+        
         self.background_song_combobox['values'] = songs
+        
         if songs:
-            if current_selection in songs: self.background_song_combobox.set(current_selection)
-            else: self.background_song_combobox.current(0)
+            self.background_song_combobox.current(0)
         else:
             self.background_song_combobox.set("No background songs found")
 
@@ -298,12 +309,16 @@ class AudioApp(tk.Tk):
         if not os.path.isdir(requests_dir):
             try: os.makedirs(requests_dir)
             except OSError: pass
+
+        self.song_combobox.set('')
+        self.song_combobox['values'] = []
+
         songs = sorted([f for f in os.listdir(requests_dir) if f.endswith('.mp3')])
-        current_selection = self.song_combobox.get()
+
         self.song_combobox['values'] = songs
+        
         if songs:
-            if current_selection in songs: self.song_combobox.set(current_selection)
-            else: self.song_combobox.current(0)
+            self.song_combobox.current(0)
         else:
             self.song_combobox.set("No songs found")
 
@@ -582,9 +597,17 @@ class AudioApp(tk.Tk):
                 self.max_queue_length = int(queue_length_str)
             except ValueError:
                 self.max_queue_length = 20
+            
+            duration_seconds_str = self.config.get('MusicDownloader', 'max_download_duration_seconds', fallback='600')
+            try:
+                duration_minutes = int(duration_seconds_str) // 60
+                self.max_duration_var.set(str(duration_minutes))
+            except ValueError:
+                self.max_duration_var.set('10')
         else:
             self.music_downloader_enabled_var.set(True)
             self.max_queue_length = 20
+            self.max_duration_var.set('10')
             
         self.max_queue_var.set(str(self.max_queue_length))
         self.autoplay_queue = deque(self.autoplay_queue, maxlen=self.max_queue_length)
@@ -668,6 +691,15 @@ class AudioApp(tk.Tk):
             
         self.config.set('MusicDownloader', 'enabled', str(music_downloader_enabled_state).lower())
         
+        duration_seconds_to_send = None
+        try:
+            duration_minutes = int(self.max_duration_var.get())
+            duration_seconds = duration_minutes * 60
+            self.config.set('MusicDownloader', 'max_download_duration_seconds', str(duration_seconds))
+            duration_seconds_to_send = duration_seconds
+        except ValueError:
+            print("WARNING: Invalid max duration value. This setting will not be saved.")
+
         try:
             int(self.max_queue_var.get())
             self.config.set('MusicDownloader', 'max_queue_length', self.max_queue_var.get())
@@ -687,6 +719,13 @@ class AudioApp(tk.Tk):
             args=('music_downloader_enabled', music_downloader_enabled_state), 
             daemon=True
         ).start()
+
+        if duration_seconds_to_send is not None:
+            threading.Thread(
+                target=self._send_runtime_update,
+                args=('max_download_duration_seconds', duration_seconds_to_send),
+                daemon=True
+            ).start()
 
     def toggle_sensitive_field(self, entry_widget, button_widget):
         if button_widget.cget("text") == "Show":

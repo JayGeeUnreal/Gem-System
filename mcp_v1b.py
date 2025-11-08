@@ -8,7 +8,7 @@
 # - A THREAD-SAFE unified RAG( ChromaDB) memory system.
 # - Location awareness, OSC command bypass, multi-platform broadcasting & more.
 # - Music recognition with selectable input device and configurable triggers.
-# - Music downloader.
+# - Music downloader with configurable max duration and immediate feedback.
 # ==============================================================================
 
 import requests
@@ -34,6 +34,7 @@ from flask_cors import CORS
 import subprocess
 import traceback
 import queue
+import yt_dlp # For checking song duration
 # ------------------------------------------
 
 import sounddevice as sd
@@ -47,7 +48,7 @@ def load_config():
     global MUSIC_RECOGNITION_ENABLED, MUSIC_RECOGNITION_SETTINGS
 
     config_file = 'mcp_settings.ini'
-    config_parser = configparser.ConfigParser(interpolation=None) 
+    config_parser = configparser.ConfigParser(interpolation=None)
     if not os.path.exists(config_file): sys.exit(f"FATAL ERROR: Config file '{config_file}' not found.")
     config_parser.read(config_file)
     settings = {}
@@ -116,16 +117,17 @@ def load_config():
             settings['music_recognition_enabled'] = False
             MUSIC_RECOGNITION_ENABLED = False
         
-        # --- THIS IS THE CRITICAL FIX ---
-        # This block now correctly loads the 'enabled' state for the downloader on startup.
+        # --- THIS BLOCK LOADS ALL MUSIC DOWNLOADER SETTINGS ---
         if config_parser.has_section('MusicDownloader'):
             raw_download_triggers = config_parser.get('MusicDownloader', 'trigger_words', fallback='')
             settings['download_trigger_words'] = [word.strip().lower() for word in raw_download_triggers.split(',') if word.strip()]
             settings['music_downloader_enabled'] = config_parser.getboolean('MusicDownloader', 'enabled', fallback=False)
+            settings['max_download_duration_seconds'] = config_parser.getint('MusicDownloader', 'max_download_duration_seconds', fallback=600)
         else:
             settings['download_trigger_words'] = []
             settings['music_downloader_enabled'] = False
-        # -------------------------------------------
+            settings['max_download_duration_seconds'] = 600
+        # ----------------------------------------------------
 
     except Exception as e:
         sys.exit(f"FATAL ERROR: A setting is missing or invalid in '{config_file}'. Details: {e}")
@@ -489,14 +491,46 @@ def send_to_tts(text_to_speak: str):
         requests.post(url, json=payload, timeout=15).raise_for_status()
         print("MCP INFO: StyleTTS server accepted the request.")
     except Exception as e: print(f"MCP ERROR: Could not send to StyleTTS server. Details: {e}")
+
+def get_song_info_and_check_duration(query: str) -> dict:
+    """
+    Finds a song on YouTube, checks its duration against the configured limit,
+    and returns its details or a rejection reason.
+    """
+    print(f"MCP DOWNLOAD: Verifying song: '{query}'")
+    MAX_DURATION_SECONDS = config.get('max_download_duration_seconds', 600)
+    
+    try:
+        with yt_dlp.YoutubeDL({'quiet': True, 'extract_flat': True, 'force_generic_extractor': True}) as ydl:
+            info = ydl.extract_info(f"ytsearch1:{query}", download=False)
+            if not info.get('entries'):
+                return {"status": "error", "message": "I couldn't find any results for that song."}
+
+            video_info = info['entries'][0]
+            duration = video_info.get('duration', 0)
+            video_url = video_info.get('url')
+            title = video_info.get('title', 'Unknown Title')
+
+        if duration and duration > MAX_DURATION_SECONDS:
+            minutes, _ = divmod(int(duration), 60)
+            limit_minutes, _ = divmod(int(MAX_DURATION_SECONDS), 60)
+            message = f"Sorry, the song '{title}' is over {minutes} minutes long, which is past the {limit_minutes} minute limit."
+            print(f"!!! MCP DOWNLOAD REJECTED: {message}")
+            return {"status": "rejected", "message": message}
+        
+        return {"status": "ok", "url": video_url, "title": title}
+
+    except Exception as e:
+        print(f"!!! MCP DOWNLOAD ERROR: Could not verify song info. Details: {e}")
+        return {"status": "error", "message": "Sorry, I ran into an error trying to look up that song."}
 # ------------------------------------------------------------------------------
 
 
 # --- Music Downloader Helper Functions ---
 # ------------------------------------------------------------------------------
-def handle_song_download_task(query: str):
-    """Executes the download worker script for a given song query."""
-    print(f"MCP DOWNLOAD: Starting worker for query: '{query}'")
+def handle_song_download_task(video_url: str):
+    """Executes the download worker script for a pre-vetted video URL."""
+    print(f"MCP DOWNLOAD: Starting worker for URL: '{video_url}'")
     downloaded_filename = None
     try:
         python_executable = sys.executable
@@ -505,7 +539,7 @@ def handle_song_download_task(query: str):
             print("!!! MCP DOWNLOAD ERROR: 'download_worker.py' not found.")
             return
 
-        command = [python_executable, worker_script_path, query]
+        command = [python_executable, worker_script_path, video_url]
         process = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding='utf-8',
@@ -519,7 +553,7 @@ def handle_song_download_task(query: str):
                 clean_filename = os.path.basename(line)
                 downloaded_filename = clean_filename
                 print(f"MCP AUTOPLAY: Captured and cleaned filename: '{downloaded_filename}'")
-        
+
         process.wait()
         print("MCP DOWNLOAD: Worker process finished.")
 
@@ -537,8 +571,8 @@ def handle_song_download_task(query: str):
 def _process_download_queue():
     """Background thread function to process song download requests one by one."""
     while True:
-        query = download_queue.get()
-        handle_song_download_task(query)
+        video_url = download_queue.get()
+        handle_song_download_task(video_url)
         download_queue.task_done()
 # ------------------------------------------------------------------------------
 
@@ -622,7 +656,6 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
         return ""
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
     add_chat_to_memory("User", clean_user_text)
-    print(f"DEBUG: Loaded download triggers: {config.get('download_trigger_words')}")
 
     if MUSIC_RECOGNITION_ENABLED and any(keyword in clean_user_text.lower() for keyword in config['music_trigger_words']):
         print(f"MCP MUSIC: Detected music recognition request: '{clean_user_text}'")
@@ -634,8 +667,7 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
             add_chat_to_memory("System", response_text)
         threading.Thread(target=run_recognition_in_thread, daemon=True).start()
         return "Listening..."
-    # --------------------------------------------------------------------
-
+    
     is_music_download_request = any(trigger in clean_user_text.lower() for trigger in config.get('download_trigger_words', []))
     is_time_request = any(keyword in clean_user_text.lower() for keyword in ['time is it', 'what time', 'current time', 'date'])
     is_rag_request = any(clean_user_text.lower().startswith(trigger) for trigger in config['rag_trigger_words'])
@@ -650,17 +682,22 @@ def process_task(source: str, user_text: str, vision_context: str = "") -> str:
     final_response = ""
     
     if is_music_download_request:
-        # Find the trigger word that was used to formulate a better search query
         trigger_found = next((trigger for trigger in config['download_trigger_words'] if trigger in clean_user_text.lower()), "")
-        # Remove the trigger phrase to get just the song title/artist
         search_query = clean_user_text.lower().replace(trigger_found, "", 1).strip()
         
         if not search_query:
             final_response = "What song would you like me to download?"
         else:
-            print(f"MCP DOWNLOAD: Adding '{search_query}' to internal download queue.")
-            download_queue.put(search_query)
-            final_response = f"Okay, I've added '{search_query}' to the download queue."
+            # Perform the duration check immediately
+            song_info = get_song_info_and_check_duration(search_query)
+            
+            if song_info["status"] == "ok":
+                # If OK, add the URL to the queue and create the success message
+                download_queue.put(song_info["url"])
+                final_response = f"Okay, I've added '{song_info['title']}' to the download queue."
+            else:
+                # If rejected or error, use the message from the helper function
+                final_response = song_info["message"]
     
     elif is_osc_request:
         verb_found = next((verb for verb in config['osc_trigger_verbs'] if clean_user_text.lower().startswith(verb)), "")
@@ -721,8 +758,6 @@ def update_runtime_setting():
     if not key:
         return jsonify({"status": "error", "message": "Missing 'key' in request."}), 400
 
-    # This logic correctly handles boolean True/False from the control panel,
-    # as well as string versions "true"/"false" if they are ever sent.
     if isinstance(value, bool):
         actual_value = value
     elif isinstance(value, str):
@@ -802,16 +837,13 @@ if __name__ == '__main__':
     print("\n" + "="*70)
     print("--- Starting UNIFIED Master Control Program (MCP) ---")
 
-    # If music recognition is on, call the new automatic device selection function.
     if config.get('music_recognition_enabled', False):
         SELECTED_INPUT_DEVICE_INDEX = select_audio_device()
         if SELECTED_INPUT_DEVICE_INDEX is None:
-            # This warning is shown if no input devices could be found at all.
             print("--- CRITICAL WARNING: Could not configure an audio device. Music recognition will fail. ---")
 
     download_thread = threading.Thread(target=_process_download_queue, daemon=True)
     download_thread.start()
-    # --------------------------------------------------
 
     clear_screen()
     print(f"--- Using Audio Input Device Index: {SELECTED_INPUT_DEVICE_INDEX} ---")
