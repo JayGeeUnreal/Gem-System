@@ -28,7 +28,7 @@ INI_FILE_PATH = "mcp_settings.ini"
 DROPDOWN_SECTION = "MCP"
 DROPDOWN_KEY = "llm_choice"
 DROPDOWN_OPTIONS = ["gemini", "ollama", "ollama_vision", "minitron"]
-SENSITIVE_KEYS = ["api_key", "session_id"]
+SENSITIVE_KEYS = ["api_key", "session_id", "rapidapi_key"]
 
 class AudioApp(tk.Tk):
     def __init__(self):
