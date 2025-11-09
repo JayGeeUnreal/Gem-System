@@ -12,8 +12,6 @@ For Unreal Engine Face Blendshapes its using the same technology as Convai (As f
 
 I´m not a programmer so this code probably isnt the fastest or best. This Is something i made because i couldn't find a system that had what i wanted. And with this system its "easier" to add more functions/Tools. So hopefully someone finds it interesting or usefull. The main goal with the project was to make an AI "VTuber" or what ever to call it, that "lives" inside Unreal Engine and since it is for an AI "VTuber" it is connected to Social Stream Ninja so stream chats can interact with it.
 
-As of now the default configuration is using llava:7b for Chat,Vision and embedding
-
 Music recognition is using https://rapidapi.com/ for now that connects to Shazam...
 
 
