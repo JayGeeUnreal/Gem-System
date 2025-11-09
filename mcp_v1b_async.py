@@ -202,7 +202,7 @@ SELECTED_INPUT_DEVICE_INDEX = None
 download_queue = queue.Queue()
 
 from sentence_transformers import SentenceTransformer
-EMBEDDING_MODEL_NAME = 'google/embedding-gemma-300m'
+EMBEDDING_MODEL_NAME = 'google/embeddinggemma-300m'
 local_embedding_model = None
 try:
     if config['llm_choice'] == 'gemini':
