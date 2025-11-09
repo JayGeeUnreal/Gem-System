@@ -11,7 +11,6 @@
 # - Music downloader with configurable max duration and immediate feedback.
 # ==============================================================================
 
-### ASYNC: Import necessary async libraries
 import asyncio
 import httpx
 
@@ -31,7 +30,6 @@ from geopy.geocoders import Nominatim
 from timezonefinder import TimezoneFinder
 import threading
 
-### ASYNC: Import Quart instead of Flask
 from quart import Quart, request, jsonify
 from quart_cors import cors
 
@@ -45,8 +43,6 @@ import sounddevice as sd
 import soundfile as sf
 # ------------------------------------------
 
-# --- 1. CONFIGURATION LOADING (No changes needed here) ---
-# ... (Your existing load_config function remains the same)
 def load_config():
     """Loads all settings from the mcp_settings.ini file."""
     global MUSIC_RECOGNITION_ENABLED, MUSIC_RECOGNITION_SETTINGS
@@ -135,8 +131,7 @@ def load_config():
         sys.exit(f"FATAL ERROR: A setting is missing or invalid in '{config_file}'. Details: {e}")
     return settings
 
-# --- Standalone function for device selection (No changes needed) ---
-# ... (Your existing select_audio_device function remains the same)
+# --- Standalone function for device selection
 def select_audio_device():
     """
     Selects an audio input device by parsing the '[Audio] selected_input'
@@ -199,7 +194,6 @@ CURRENT_LOCATION = "the stream room"
 SELECTED_INPUT_DEVICE_INDEX = None
 download_queue = queue.Queue()
 
-# ... (rest of your initialization code is fine)
 from sentence_transformers import SentenceTransformer
 EMBEDDING_MODEL_NAME = 'google/embeddinggemma-300m'
 local_embedding_model = None
@@ -225,7 +219,6 @@ try:
 except Exception as e:
     print(f"MCP WARNING: Could not initialize location tools. Time lookups may fail. Details: {e}")
 
-### ASYNC: Make this function async to use httpx
 async def verify_ollama_models():
     if "ollama" not in config['llm_choice']: return
     print("MCP INFO: Verifying that required Ollama models are available...")
@@ -264,8 +257,6 @@ if config['llm_choice'] == "gemini":
         sys.exit(f"MCP FATAL ERROR: Failed to configure Gemini API. Details: {e}")
 elif config['llm_choice'] in ["ollama", "ollama_vision"]:
     print("MCP INFO: Verifying Ollama connection...")
-    # We can run the async function here using asyncio.run
-    # Note: In a real async app, you'd manage the event loop differently, but this is fine for startup.
     try:
         asyncio.run(verify_ollama_models())
         print(f"MCP INFO: Ollama connection successful.")
@@ -285,7 +276,6 @@ if config['osc_enabled']:
 # --- 3. CORE HELPER FUNCTIONS (NOW ASYNC) ---
 # ------------------------------------------------------------------------------
 
-# This function is CPU-bound, so it doesn't need to be async
 def get_gemini_embedding(text: str = None, image_base64: str = None) -> list[float]:
     # ... (no changes needed in this function's logic)
     if not text: return None
@@ -300,7 +290,6 @@ def get_gemini_embedding(text: str = None, image_base64: str = None) -> list[flo
         print(f"MCP ERROR: Could not get local Gemini embedding. Details: {e}")
         return None
 
-### ASYNC: This function now uses httpx for network requests
 async def get_embedding(text: str = None, image_base64: str = None) -> list[float]:
     if not text and not image_base64: return None
     if config['llm_choice'] in ['ollama', 'ollama_vision']:
@@ -321,19 +310,18 @@ async def get_embedding(text: str = None, image_base64: str = None) -> list[floa
             return None
     elif config['llm_choice'] == 'gemini':
         if image_base64: print("MCP WARNING: Gemini embedding path does not support images currently. Using text only.")
-        # This is a CPU-bound function, run it in a thread to avoid blocking
+
         return await asyncio.to_thread(get_gemini_embedding, text=text)
     else:
         print(f"MCP ERROR: Unknown llm_choice '{config['llm_choice']}' for embedding generation.")
         return None
-
-### ASYNC: This function calls the async `get_embedding`
+#
 async def add_chat_to_memory(speaker: str, text: str):
     vector = await get_embedding(text=text)
     if vector:
         try:
             doc_id = datetime.datetime.now().isoformat()
-            # ChromaDB is synchronous, so run it in a thread
+
             await asyncio.to_thread(
                 chat_collection.add,
                 ids=[doc_id],
@@ -347,7 +335,7 @@ async def add_image_to_memory(image_identifier: str, image_base64: str):
     vector = await get_embedding(image_base64=image_base64)
     if vector:
         try:
-            # ChromaDB is synchronous, so run it in a thread
+            #
             await asyncio.to_thread(
                 image_collection.add,
                 ids=[image_identifier],
@@ -357,8 +345,6 @@ async def add_image_to_memory(image_identifier: str, image_base64: str):
             print(f"MCP MEMORY: Added image '{image_identifier}' to ChromaDB.")
         except Exception as e: print(f"MCP ERROR: Failed to add image to ChromaDB. Details: {e}")
 
-
-### ASYNC: This is a critical async function now.
 async def ask_llm(user_content: str, image_data_base64: str = None) -> tuple[str, dict]:
     print(f"MCP INFO: Sending prompt to {config['llm_choice'].upper()}...")
     perf_data = {"tps": 0.0}
@@ -378,7 +364,7 @@ async def ask_llm(user_content: str, image_data_base64: str = None) -> tuple[str
 
         elif config['llm_choice'] == 'gemini':
             final_gemini_prompt = f"{system_prompt}\n\n---\n\n{user_content}"
-            # The genai library has its own async methods
+
             gemini_response = await gemini_model.generate_content_async(final_gemini_prompt)
             return gemini_response.text.strip(), perf_data
 
@@ -398,7 +384,7 @@ async def ask_llm(user_content: str, image_data_base64: str = None) -> tuple[str
         print(f"MCP ERROR: An exception occurred in ask_llm. Details: {e}")
         return "Sorry, I encountered an error while trying to think.", perf_data
 
-### ASYNC: This function now calls the async `get_embedding`
+
 async def retrieve_from_rag(user_query: str) -> str:
     print(f"MCP INFO: RAG retrieval triggered for query: '{user_query}'")
     vector = await get_embedding(text=user_query)
@@ -406,7 +392,7 @@ async def retrieve_from_rag(user_query: str) -> str:
     context_str = "CONTEXT FROM LONG-TERM MEMORY:\n"
     found_context = False
     try:
-        # ChromaDB is synchronous, run in a thread
+        
         chat_results = await asyncio.to_thread(
             chat_collection.query, query_embeddings=[vector], n_results=3
         )
@@ -427,7 +413,7 @@ async def retrieve_from_rag(user_query: str) -> str:
         return ""
     return context_str if found_context else ""
 
-# Geopy is synchronous, so we'll wrap its calls in to_thread
+# Geopy
 async def get_time_for_location(location_name: str) -> str:
     if not location_name: return None
     try:
@@ -448,7 +434,7 @@ async def get_time_for_location(location_name: str) -> str:
         print(f"MCP ERROR: An exception occurred in get_time_for_location. Details: {e}")
         return "I had trouble looking up the time for that location."
 
-# ... (send_over_osc, get_song_info_and_check_duration, etc., can remain synchronous for now
+# ... (send_over_osc, get_song_info_and_check_duration, etc., can be synchronous for now
 # unless they become performance bottlenecks. yt-dlp is blocking, so it's a good candidate for `to_thread` if needed)
 def send_over_osc(command_text: str):
     if not config['osc_enabled'] or not osc_client: return
@@ -489,7 +475,7 @@ async def get_fresh_vision_context() -> str:
         return response.json().get("vision_context", "Error: Invalid response from vision service.")
     except Exception as e: return f"Error: Could not reach vision service. Is it running? Details: {e}"
 
-### ASYNC: This function is now fully asynchronous for concurrent sending.
+### 
 async def send_to_social_stream(text_to_send: str):
     if not config.get('social_stream_enabled', False): return
     if not text_to_send or text_to_send.startswith("ACTION_GOTO:"): return
@@ -519,7 +505,7 @@ async def send_to_social_stream(text_to_send: str):
     print("MCP INFO: All social stream broadcasts have completed.")
 
 
-### ASYNC: Changed to use httpx
+
 async def send_to_tts(text_to_speak: str):
     if not config.get('styletts_enabled', False): return
     if not text_to_speak or text_to_speak.startswith("ACTION_GOTO:"): return
@@ -537,8 +523,7 @@ async def send_to_tts(text_to_speak: str):
         print("MCP INFO: StyleTTS server accepted the request.")
     except Exception as e: print(f"MCP ERROR: Could not send to StyleTTS server. Details: {e}")
 
-# ... (Music downloader functions can stay largely the same, as they use a thread-safe queue)
-# ... (Music recognition functions can also be kept, as they are triggered in a separate thread anyway)
+
 
 
 # --- 4. UNIVERSAL PROCESSING FUNCTION (NOW ASYNC) ---
@@ -566,7 +551,7 @@ async def process_task(source: str, user_text: str, vision_context: str = "") ->
     print(f"MCP: Wake word confirmed! Processing: '{clean_user_text}'")
     await add_chat_to_memory("User", clean_user_text)
 
-    # ... (Your logic for checking triggers is fine)
+    # ... checking triggers
     is_time_request = any(keyword in clean_user_text.lower() for keyword in ['time is it', 'what time', 'current time', 'date'])
     is_rag_request = any(clean_user_text.lower().startswith(trigger) for trigger in config['rag_trigger_words'])
     is_osc_request = config['osc_enabled'] and any(clean_user_text.lower().startswith(verb) for verb in config['osc_trigger_verbs'])
@@ -574,10 +559,10 @@ async def process_task(source: str, user_text: str, vision_context: str = "") ->
     
     final_response = ""
 
-    ### NOW, WE USE `await` FOR ALL THE ASYNC HELPER FUNCTIONS ###
+    ### NOW, USE `await` FOR ALL THE ASYNC HELPER FUNCTIONS ###
 
     if is_osc_request:
-        # ... (OSC logic is synchronous and fine)
+        # ... OSC logic is synchronous
         verb_found = next((verb for verb in config['osc_trigger_verbs'] if clean_user_text.lower().startswith(verb)), "")
         destination = clean_user_text[len(verb_found):].strip()
         if not destination: final_response = "Where do you want me to go?"
@@ -635,7 +620,7 @@ async def update_runtime_setting():
     data = await request.get_json()
     key = data.get('key')
     value = data.get('value')
-    # ... (rest of your logic here is fine)
+    # ...
     if not key:
         return jsonify({"status": "error", "message": "Missing 'key' in request."}), 400
     if key in config:
@@ -664,7 +649,7 @@ async def handle_chat_request():
         
     return jsonify({"status": "ok"})
 
-# ... (similar async changes for your other routes)
+# ... 
 @app.route('/vision', methods=['POST'])
 async def handle_vision_request():
     data = await request.get_json()
