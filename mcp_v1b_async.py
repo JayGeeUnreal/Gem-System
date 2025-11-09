@@ -277,7 +277,7 @@ if config['osc_enabled']:
 # ------------------------------------------------------------------------------
 
 def get_gemini_embedding(text: str = None, image_base64: str = None) -> list[float]:
-    # ... (no changes needed in this function's logic)
+    #
     if not text: return None
     if image_base64: print("MCP WARNING: Local SentenceTransformer embedding does not support images. Using text only.")
     if local_embedding_model is None:
@@ -533,7 +533,7 @@ async def process_task(source: str, user_text: str, vision_context: str = "") ->
     """The central logic hub with the corrected, prioritized workflow for all tools."""
     global VISION_HISTORY, CURRENT_LOCATION
 
-    # ... (wake word logic is unchanged)
+    #
     wake_word_detected, clean_user_text = False, ""
     for word in config['wake_words']:
         if not word: continue
@@ -702,7 +702,7 @@ if __name__ == '__main__':
     print("\n" + "="*70)
     print("--- Starting ASYNCHRONOUS UNIFIED Master Control Program (MCP) ---")
 
-    # ... (Your startup logic is mostly fine)
+    #
     if config.get('music_recognition_enabled', False):
         SELECTED_INPUT_DEVICE_INDEX = select_audio_device()
         if SELECTED_INPUT_DEVICE_INDEX is None:
