@@ -25,3 +25,4 @@ pandas
 pydub
 traceback
 youtube-search-python
+yt-dlp
