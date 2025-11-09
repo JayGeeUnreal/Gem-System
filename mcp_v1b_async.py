@@ -613,7 +613,7 @@ async def process_task(source: str, user_text: str, vision_context: str = "") ->
         prompt_for_llm = f"{long_term_memory}{location_context}\n{history_context}\n\n---\nBased on all available context, answer the user's question:\n\"{clean_user_text}\""
         final_response, _ = await ask_llm(prompt_for_llm)
 
-    ### PLACE YOUR ASYNC COGNEE CALLS HERE ###
+    ### PLACE COGNEE CALLS HERE ###
     # For example:
     # if "some cognee trigger" in clean_user_text:
     #     cognee_result = await some_async_cognee_function(final_response)
