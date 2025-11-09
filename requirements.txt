@@ -25,4 +25,12 @@ pandas
 pydub
 traceback
 youtube-search-python
+cognee
+protego>=0.1
+playwright>=1.9.0
 yt-dlp
+quart 
+quart-cors 
+httpx 
+asyncio
+sentence-transformers git+https://github.com/huggingface/transformers@v4.56.0-Embedding-Gemma-preview
