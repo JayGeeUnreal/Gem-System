@@ -1,3 +1,5 @@
+This is basicly like an extended version of Nvidia R2X but it can be ran fully localy.
+
 !! OBS I´m using Python 3.10 when testing, it might work with other versions but thats the python version i use..
 
 !! Use the Music Request system at your own risc. You could be breaking TOS for the Social media platforms used. !!'
