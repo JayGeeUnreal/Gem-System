@@ -1,3 +1,5 @@
+This is basicly like an extended version of Nvidia R2X but it can be run fully localy.
+
 !! OBS I´m using Python 3.10 when testing, it might work with other versions but thats the python version i use..
 
 !! Use the Music Request system at your own risc. You could be breaking TOS for the Social media platforms used. !!'
@@ -86,3 +88,99 @@ The system is designed to be highly modular. A typical interaction can follow se
 
 This unified and pipelined approach allows for a rich, interactive experience where the AI can not only understand and respond to users across multiple platforms but also perceive and react to its visual environment, all while presenting a dynamic and expressive virtual persona in Unreal Engine.
 
+# Gem-System Installation
+
+## Prerequisites
+
+Before you begin, ensure you have the following software installed:
+
+*   **Anaconda:** This project is tested with `Anaconda3_Py3_13-2025.06-0-Windows-x86_64.exe`. You can download it from the official Anaconda website.
+*   **Voicemeter Banana:** While not required for basic functionality, it is necessary for all features to work. Download it from [https://vb-audio.com/Voicemeeter/banana.htm](https://vb-audio.com/Voicemeeter/banana.htm).
+*   **NVIDIA CUDA Toolkit:** Required for GPU acceleration. Download it from the [NVIDIA Developer website](https://developer.nvidia.com/cuda-downloads).
+
+---
+
+## MCP (Main Control Program) Installation
+
+1.  **Open Anaconda Prompt:** Launch the Anaconda Prompt from your Start Menu.
+
+2.  **Clone the Repository:** Navigate to your desired installation directory and clone the Gem-System repository.
+    ```bash
+    git clone https://github.com/JayGeeUnreal/Gem-System.git
+    cd YOUR_PATH\Gem-System
+    ```
+
+3.  **Create and Activate Conda Environment:** Create a new Conda environment for the MCP and activate it.
+    ```bash
+    conda create --name mcp_env_1 python=3.10 -y
+    conda activate mcp_env_1
+    ```
+
+4.  **Install PyTorch:** The PyTorch installation command depends on your CUDA version.
+    *   Check your CUDA version by running:
+        ```bash
+        nvcc --version
+        ```
+    *   Go to the [PyTorch website](https://pytorch.org/get-started/locally/) to get the correct installation command for your system.
+    *   For example, with CUDA 12.8, the command is:
+        ```bash
+        pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+        ```
+
+5.  **Install Requirements:** Install the remaining required packages.
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+---
+
+## StyleTTS2 Installation
+
+For a detailed video guide on installing StyleTTS2, you can refer to this [YouTube video](https://www.youtube.com/watch?v=_lhCaRQWGHw).
+
+1.  **Clone the StyleTTS2 Repository:**
+    ```bash
+    cd YOUR_PATH\Gem-System
+    git clone https://github.com/yl4579/StyleTTS2.git
+    ```
+
+2.  **Create and Activate Conda Environment:** Create a separate environment for StyleTTS2.
+    ```bash
+    cd YOUR_PATH\Gem-System\StyleTTS2
+    conda create --name styletts2 python=3.10 -y
+    conda activate styletts2
+    ```
+
+3.  **Install Dependencies:**
+    ```bash
+    pip install huggingface_hub[hf_xet]
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 -U
+    pip install -r requirements.txt
+    pip install phonemizer
+    pip install gradio
+    pip install cached_path
+    pip install txtsplit
+    pip install flask
+    pip install flask_cors
+    ```
+
+4.  **Install eSpeak NG:**
+    *   Download and install from the [eSpeak NG releases page](https://github.com/espeak-ng/espeak-ng/releases).
+    *   **Set Environment Variables:** You need to add the following system environment variables:
+        *   `PHONEMIZER_ESPEAK_PATH` = `C:\Program Files\eSpeak NG`
+        *   `PHONEMIZER_ESPEAK_LIBRARY` = `C:\Program Files\eSpeak NG\libespeak-ng.dll`
+        *   `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` = `1`
+
+5.  **(Optional) Download Gradio Demo Files:**
+    *   Download the demo files from the [Hugging Face Space](https://huggingface.co/spaces/styletts2/styletts2/tree/main).
+    *   Place `ljspeechimportable.py`, `styletts2importable.py`, and `app.py` into the `YOUR_PATH\Gem-System\StyleTTS2` directory.
+
+---
+
+## Running the Application
+
+1.  Navigate to the `start_scripts` folder.
+
+2.  Double-click `start_control_panel.bat` to launch the control panel.
+
+3.  In the control panel, you can configure your settings. At the bottom of the window, you will find buttons to start each service.
