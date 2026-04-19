@@ -1,3 +1,5 @@
+Broken at the moment....
+
 This is basicly like an extended version of Nvidia R2X but it can be run fully localy.
 
 !! OBS I´m using Python 3.10 when testing, it might work with other versions but thats the python version i use..
